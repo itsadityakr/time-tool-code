@@ -113,6 +113,19 @@ function App() {
     const [isDarkMode, setIsDarkMode] = useState(
         () => localStorage.getItem("theme") === "dark",
     );
+    const [columnWidths, setColumnWidths] = useState({
+        date: 140,
+        jiraId: 120,
+        description: 280,
+        timeLogged: 130,
+        status: 120,
+        projectName: 180,
+        remarks: 200,
+        startDate: 140,
+        endDate: 140,
+        totalTime: 140,
+    });
+
     const [accentColor, setAccentColor] = useState(
         () => localStorage.getItem("accent") || "blue",
     );
@@ -164,6 +177,28 @@ function App() {
         key: null,
         direction: "asc",
     });
+
+    const startResize = (e, key) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = columnWidths[key];
+
+        const onMouseMove = (moveEvent) => {
+            const newWidth = startWidth + (moveEvent.clientX - startX);
+            setColumnWidths((prev) => ({
+                ...prev,
+                [key]: Math.max(80, newWidth),
+            }));
+        };
+
+        const onMouseUp = () => {
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onMouseUp);
+        };
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+    };
 
     const [searchColumn, setSearchColumn] = useState("all");
 
@@ -841,7 +876,7 @@ function App() {
                 className={`transition-all duration-300 ${isSidebarOpen ? "ml-72" : "ml-20"}`}>
                 {/* Header */}
                 <header
-                    className={`sticky top-0 z-30 h-16 px-8 flex items-center justify-between backdrop-blur-md border-b ${isDarkMode ? "bg-slate-950/80 border-slate-800" : "bg-white/80 border-gray-200"}`}>
+                    className={`z-30 h-16 px-8 flex items-center justify-between backdrop-blur-md border-b ${isDarkMode ? "bg-slate-950/80 border-slate-800" : "bg-white/80 border-gray-200"}`}>
                     <div className="flex items-center gap-4">
                         <h2 className="text-xl font-bold">Dashboard</h2>
                         <div
@@ -878,41 +913,6 @@ function App() {
 
                 {/* Content Area */}
                 <main className="p-8">
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                        <StatCard
-                            title="Total Worklogs"
-                            value={stats.totalLogs}
-                            icon={<FileSpreadsheet />}
-                            color={getTheme().text}
-                            bg={getTheme().light}
-                        />
-                        <StatCard
-                            title="Active Projects"
-                            value={stats.totalProjects}
-                            icon={<Briefcase />}
-                            color="text-emerald-600"
-                            bg="bg-emerald-50 dark:bg-emerald-900/20"
-                        />
-                        <StatCard
-                            title="Total Time"
-                            value={calculateTotalTime()}
-                            icon={<Clock />}
-                            color="text-amber-600"
-                            bg="bg-amber-50 dark:bg-amber-900/20"
-                        />
-                        <StatCard
-                            title="Tasks Done"
-                            value={
-                                worklogs.filter((l) => l.status === "Done")
-                                    .length
-                            }
-                            icon={<CheckCircle2 />}
-                            color="text-blue-600"
-                            bg="bg-blue-50 dark:bg-blue-900/20"
-                        />
-                    </div>
-
                     {/* Action Bar */}
                     <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                         <div className="flex gap-2">
@@ -984,13 +984,21 @@ function App() {
 
                     {/* Data Table */}
                     <div
-                        className={`rounded-xl border shadow-sm overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+                        className={`rounded-xl border shadow-sm ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left">
+                            <table
+                                className="text-sm text-left table-fixed"
+                                style={{
+                                    minWidth:
+                                        Object.values(columnWidths).reduce(
+                                            (a, b) => a + b,
+                                            0,
+                                        ) + 120,
+                                }}>
                                 <thead
-                                    className={`text-xs uppercase font-semibold ${
+                                    className={`sticky top-0 z-999 text-xs uppercase font-semibold ${
                                         isDarkMode
-                                            ? "bg-slate-950/50 text-slate-400"
+                                            ? "bg-slate-950 text-slate-400"
                                             : "bg-gray-50 text-gray-500"
                                     }`}>
                                     <tr>
@@ -998,6 +1006,44 @@ function App() {
                                             <th className="px-6 py-4 w-12"></th>
                                         )}
                                         {getCurrentColumns().map((col) => {
+                                            // 🔹 TIME COLUMN WITH TOTAL
+                                            if (col.key === "timeLogged") {
+                                                return (
+                                                    <th
+                                                        key={col.key}
+                                                        style={{
+                                                            width: columnWidths[
+                                                                col.key
+                                                            ],
+                                                        }}
+                                                        className="relative px-6 py-4 select-none">
+                                                        <div className="flex justify-between items-center">
+                                                            <span>
+                                                                Time
+                                                                <span className="ml-1 text-xs text-gray-400">
+                                                                    [
+                                                                    {calculateTotalTime()}
+                                                                    ]
+                                                                </span>
+                                                            </span>
+
+                                                            <div
+                                                                onMouseDown={(
+                                                                    e,
+                                                                ) =>
+                                                                    startResize(
+                                                                        e,
+                                                                        col.key,
+                                                                    )
+                                                                }
+                                                                className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-500"
+                                                            />
+                                                        </div>
+                                                    </th>
+                                                );
+                                            }
+
+                                            // 🔹 SORTABLE COLUMNS
                                             if (col.sortable) {
                                                 return (
                                                     <SortableHeader
@@ -1006,18 +1052,42 @@ function App() {
                                                         fKey={col.key}
                                                         sortConfig={sortConfig}
                                                         onSort={handleSort}
+                                                        width={
+                                                            columnWidths[
+                                                                col.key
+                                                            ]
+                                                        }
+                                                        onResize={startResize}
                                                     />
                                                 );
                                             }
 
+                                            // 🔹 NORMAL RESIZABLE COLUMNS
                                             return (
                                                 <th
                                                     key={col.key}
-                                                    className="px-6 py-4">
-                                                    {col.label}
+                                                    style={{
+                                                        width: columnWidths[
+                                                            col.key
+                                                        ],
+                                                    }}
+                                                    className="relative px-6 py-4 select-none">
+                                                    <div className="flex justify-between items-center">
+                                                        {col.label}
+                                                        <div
+                                                            onMouseDown={(e) =>
+                                                                startResize(
+                                                                    e,
+                                                                    col.key,
+                                                                )
+                                                            }
+                                                            className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-500"
+                                                        />
+                                                    </div>
                                                 </th>
                                             );
                                         })}
+
                                         {!isMerged && (
                                             <th className="px-6 py-4 text-right">
                                                 Actions
@@ -1061,16 +1131,37 @@ function App() {
                                                                 )}
                                                             </button>
                                                         </td>
-                                                        <td className="px-6 py-4 font-medium">
+                                                        <td
+                                                            className="px-6 py-4 font-medium"
+                                                            style={{
+                                                                width: columnWidths.no,
+                                                            }}>
                                                             {log.no}
                                                         </td>
-                                                        <td className="px-6 py-4">
+                                                        <td
+                                                            className="px-6 py-4"
+                                                            style={{
+                                                                width: columnWidths.jiraId,
+                                                            }}>
                                                             <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
                                                                 {log.jiraId}
                                                             </span>
                                                         </td>
-                                                        <td className="px-6 py-4 max-w-xs truncate">
-                                                            {log.description}
+                                                        <td
+                                                            className="px-6 py-4 max-w-xs truncate"
+                                                            style={{
+                                                                width: columnWidths.description,
+                                                            }}>
+                                                            <Tooltip
+                                                                text={
+                                                                    log.description
+                                                                }>
+                                                                <span className="block truncate">
+                                                                    {
+                                                                        log.description
+                                                                    }
+                                                                </span>
+                                                            </Tooltip>
                                                             {log.entryCount >
                                                                 1 && (
                                                                 <span className="ml-2 text-xs text-gray-500">
@@ -1082,21 +1173,49 @@ function App() {
                                                                 </span>
                                                             )}
                                                         </td>
-                                                        <td className="px-6 py-4 font-medium">
+
+                                                        <td
+                                                            className="px-6 py-4 font-medium"
+                                                            style={{
+                                                                width: columnWidths.startDate,
+                                                            }}>
                                                             {formatDate(
                                                                 log.startDate,
                                                             )}
                                                         </td>
-                                                        <td className="px-6 py-4 font-medium">
+                                                        <td
+                                                            className="px-6 py-4 font-medium"
+                                                            style={{
+                                                                width: columnWidths.endDate,
+                                                            }}>
                                                             {formatDate(
                                                                 log.endDate,
                                                             )}
                                                         </td>
-                                                        <td className="px-6 py-4 font-mono text-xs font-bold">
-                                                            {log.totalTime}
+                                                        <td
+                                                            className="px-6 py-4 font-mono text-xs font-bold"
+                                                            style={{
+                                                                width: columnWidths.totalTime,
+                                                            }}>
+                                                            Time [
+                                                            {log.totalTime}]
                                                         </td>
-                                                        <td className="px-6 py-4">
-                                                            {log.projectName}
+
+                                                        <td
+                                                            className="px-6 py-4"
+                                                            style={{
+                                                                width: columnWidths.projectName,
+                                                            }}>
+                                                            <Tooltip
+                                                                text={
+                                                                    log.projectName
+                                                                }>
+                                                                <span className="block truncate">
+                                                                    {
+                                                                        log.projectName
+                                                                    }
+                                                                </span>
+                                                            </Tooltip>
                                                         </td>
                                                     </tr>
 
@@ -1196,29 +1315,69 @@ function App() {
                                             <tr
                                                 key={log.id}
                                                 className={`group transition-colors ${isDarkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}`}>
-                                                <td className="px-6 py-4 font-medium">
+                                                <td
+                                                    style={{
+                                                        width: columnWidths.date,
+                                                    }}
+                                                    className="px-6 py-4 font-medium truncate">
                                                     {formatDate(log.date)}
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td
+                                                    className="px-6 py-4 "
+                                                    style={{
+                                                        width: columnWidths.jiraId,
+                                                    }}>
                                                     <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
                                                         {log.jiraId}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 max-w-xs truncate">
-                                                    {log.description}
+                                                <td
+                                                    className="px-6 py-4 max-w-xs truncate"
+                                                    style={{
+                                                        width: columnWidths.description,
+                                                    }}>
+                                                    <Tooltip
+                                                        text={log.description}>
+                                                        <span className="block truncate">
+                                                            {log.description}
+                                                        </span>
+                                                    </Tooltip>
                                                 </td>
-                                                <td className="px-6 py-4 font-mono text-xs">
+
+                                                <td
+                                                    className="px-6 py-4 font-mono text-xs"
+                                                    style={{
+                                                        width: columnWidths.timeLogged,
+                                                    }}>
                                                     {log.timeLogged}
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td
+                                                    className="px-6 py-4"
+                                                    style={{
+                                                        width: columnWidths.status,
+                                                    }}>
                                                     <StatusBadge
                                                         status={log.status}
                                                     />
                                                 </td>
-                                                <td className="px-6 py-4">
-                                                    {log.projectName}
+                                                <td
+                                                    className="px-6 py-4"
+                                                    style={{
+                                                        width: columnWidths.projectName,
+                                                    }}>
+                                                    <Tooltip
+                                                        text={log.projectName}>
+                                                        <span className="block truncate">
+                                                            {log.projectName}
+                                                        </span>
+                                                    </Tooltip>
                                                 </td>
-                                                <td className="px-6 py-4 text-xs opacity-80">
+
+                                                <td
+                                                    style={{
+                                                        width: columnWidths.remarks,
+                                                    }}
+                                                    className="px-6 py-4 text-xs opacity-80 truncate">
                                                     {log.remarks || "—"}
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -1461,20 +1620,48 @@ const FilterDropdown = ({
     </div>
 );
 
-const SortableHeader = ({ label, fKey, sortConfig, onSort }) => (
+const SortableHeader = ({
+    label,
+    fKey,
+    sortConfig,
+    onSort,
+    width,
+    onResize,
+}) => (
     <th
-        onClick={() => onSort(fKey)}
-        className="px-6 py-4 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 transition-colors select-none group">
-        <div className="flex items-center gap-1">
-            {label}
-            <div className="flex flex-col">
-                <ChevronUp
-                    className={`w-3 h-3 -mb-1 ${sortConfig.key === fKey && sortConfig.direction === "asc" ? "text-blue-500" : "text-gray-300 dark:text-slate-600"}`}
-                />
-                <ChevronDown
-                    className={`w-3 h-3 ${sortConfig.key === fKey && sortConfig.direction === "desc" ? "text-blue-500" : "text-gray-300 dark:text-slate-600"}`}
-                />
+        style={{ width }}
+        className="relative px-6 py-4 cursor-pointer select-none"
+        onClick={() => onSort(fKey)}>
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1">
+                {label}
+                <div className="flex flex-col">
+                    <ChevronUp
+                        className={`w-3 h-3 -mb-1 ${
+                            sortConfig.key === fKey &&
+                            sortConfig.direction === "asc"
+                                ? "text-blue-500"
+                                : "text-gray-300 dark:text-slate-600"
+                        }`}
+                    />
+                    <ChevronDown
+                        className={`w-3 h-3 ${
+                            sortConfig.key === fKey &&
+                            sortConfig.direction === "desc"
+                                ? "text-blue-500"
+                                : "text-gray-300 dark:text-slate-600"
+                        }`}
+                    />
+                </div>
             </div>
+
+            <div
+                onMouseDown={(e) => {
+                    e.stopPropagation();
+                    onResize(e, fKey);
+                }}
+                className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-500"
+            />
         </div>
     </th>
 );
@@ -1494,6 +1681,47 @@ const StatusBadge = ({ status }) => {
             className={`px-2.5 py-1 rounded-md text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>
             {status}
         </span>
+    );
+};
+
+const Tooltip = ({ text, children }) => {
+    const [pos, setPos] = React.useState({ x: 0, y: 0 });
+    const [show, setShow] = React.useState(false);
+
+    return (
+        <>
+            <span
+                onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setPos({
+                        x: rect.left + rect.width / 2,
+                        y: rect.top,
+                    });
+                    setShow(true);
+                }}
+                onMouseLeave={() => setShow(false)}
+                className="inline-block max-w-full truncate">
+                {children}
+            </span>
+
+            {show && (
+                <div
+                    style={{
+                        left: pos.x,
+                        top: pos.y,
+                        transform: "translate(-50%, -8px)",
+                    }}
+                    className="
+                        fixed z-9999
+                        bg-black text-white text-xs
+                        px-3 py-2 rounded-md shadow-lg
+                        max-w-xs whitespace-normal
+                        pointer-events-none
+                    ">
+                    {text}
+                </div>
+            )}
+        </>
     );
 };
 

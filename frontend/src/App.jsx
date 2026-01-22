@@ -1,0 +1,1444 @@
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import * as XLSX from "xlsx";
+import {
+    LayoutDashboard,
+    Plus,
+    Upload,
+    Download,
+    Search,
+    Moon,
+    Sun,
+    Filter,
+    X,
+    Calendar,
+    Clock,
+    CheckCircle2,
+    AlertCircle,
+    MoreVertical,
+    Trash2,
+    Edit2,
+    FileSpreadsheet,
+    Menu,
+    ChevronDown,
+    ChevronUp,
+    Briefcase,
+    Hash,
+    ListFilter,
+} from "lucide-react";
+
+// Base URL for API calls
+const API_URL = "http://localhost:5000/api";
+
+// Theme Configuration
+const THEMES = {
+    blue: {
+        primary: "bg-blue-600",
+        hover: "hover:bg-blue-700",
+        text: "text-blue-600",
+        ring: "ring-blue-500",
+        light: "bg-blue-50 dark:bg-blue-900/20",
+        border: "border-blue-200 dark:border-blue-800",
+    },
+    violet: {
+        primary: "bg-violet-600",
+        hover: "hover:bg-violet-700",
+        text: "text-violet-600",
+        ring: "ring-violet-500",
+        light: "bg-violet-50 dark:bg-violet-900/20",
+        border: "border-violet-200 dark:border-violet-800",
+    },
+    emerald: {
+        primary: "bg-emerald-600",
+        hover: "hover:bg-emerald-700",
+        text: "text-emerald-600",
+        ring: "ring-emerald-500",
+        light: "bg-emerald-50 dark:bg-emerald-900/20",
+        border: "border-emerald-200 dark:border-emerald-800",
+    },
+    rose: {
+        primary: "bg-rose-600",
+        hover: "hover:bg-rose-700",
+        text: "text-rose-600",
+        ring: "ring-rose-500",
+        light: "bg-rose-50 dark:bg-rose-900/20",
+        border: "border-rose-200 dark:border-rose-800",
+    },
+    amber: {
+        primary: "bg-amber-600",
+        hover: "hover:bg-amber-700",
+        text: "text-amber-600",
+        ring: "ring-amber-500",
+        light: "bg-amber-50 dark:bg-amber-900/20",
+        border: "border-amber-200 dark:border-amber-800",
+    },
+};
+
+const ALL_COLUMNS = [
+    { key: "date", label: "Date", sortable: true },
+    { key: "jiraId", label: "Jira ID", sortable: true },
+    { key: "description", label: "Description" },
+    { key: "timeLogged", label: "Time", sortable: true },
+    { key: "status", label: "Status", sortable: true },
+    { key: "projectName", label: "Project", sortable: true },
+    { key: "remarks", label: "Remarks" },
+];
+
+function App() {
+    const getYearsBetween = (start, end) => {
+        const years = [];
+        for (let y = start; y <= end; y++) {
+            years.push(y);
+        }
+        return years;
+    };
+
+    const getMonthsForYear = (year, startDate, endDate) => {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        let from = 0;
+        let to = 11;
+
+        if (year === start.getFullYear()) {
+            from = start.getMonth();
+        }
+        if (year === end.getFullYear()) {
+            to = end.getMonth();
+        }
+
+        return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    };
+
+    // ============= UI STATE =============
+    const [isDarkMode, setIsDarkMode] = useState(
+        () => localStorage.getItem("theme") === "dark",
+    );
+    const [accentColor, setAccentColor] = useState(
+        () => localStorage.getItem("accent") || "blue",
+    );
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState("add"); // 'add' or 'edit'
+
+    // ============= DATA STATE =============
+    const [worklogs, setWorklogs] = useState([]);
+    const [filteredLogs, setFilteredLogs] = useState([]);
+    const [stats, setStats] = useState({
+        totalLogs: 0,
+        projects: [],
+        totalProjects: 0,
+    });
+
+    const [visibleColumns, setVisibleColumns] = useState(() => {
+        const saved = localStorage.getItem("visibleColumns");
+        return saved ? JSON.parse(saved) : ALL_COLUMNS.map((c) => c.key);
+    });
+
+    const [columnMenu, setColumnMenu] = useState({
+        open: false,
+        x: 0,
+        y: 0,
+    });
+
+    useEffect(() => {
+        localStorage.setItem("visibleColumns", JSON.stringify(visibleColumns));
+    }, [visibleColumns]);
+
+    // Editing & Forms
+    const [editingId, setEditingId] = useState(null);
+    const [formData, setFormData] = useState({
+        date: "",
+        jiraId: "",
+        description: "",
+        timeLogged: "",
+        status: "",
+        projectName: "",
+        remarks: "",
+    });
+
+    // Filters
+    const [sortConfig, setSortConfig] = useState({
+        key: null,
+        direction: "asc",
+    });
+    const [sidebarFilters, setSidebarFilters] = useState({
+        selectedProject: null,
+        selectedStatus: null,
+        selectedJiraId: null,
+        selectedDate: null,
+        dateRange: { start: "", end: "" },
+        searchText: "",
+        showToday: false,
+        selectedMonth: "",
+        selectedYear: "",
+    });
+
+    // Lists
+    const [projectList, setProjectList] = useState([]);
+    const [jiraIdList, setJiraIdList] = useState([]);
+    const calculateTotalTime = () => {
+        let totalMinutes = 0;
+
+        filteredLogs.forEach((l) => {
+            if (!l.timeLogged) return;
+            const h = l.timeLogged.match(/(\d+)h/);
+            const m = l.timeLogged.match(/(\d+)m/);
+            if (h) totalMinutes += parseInt(h[1]) * 60;
+            if (m) totalMinutes += parseInt(m[1]);
+        });
+
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        return `${hours}h ${minutes}m`;
+    };
+
+    // ============= EFFECTS =============
+    useEffect(() => {
+        applyAllFilters();
+    }, [worklogs, sidebarFilters, sortConfig]);
+
+    // Theme Effect
+    useEffect(() => {
+        const root = window.document.documentElement;
+        if (isDarkMode) {
+            root.classList.add("dark");
+            localStorage.setItem("theme", "dark");
+        } else {
+            root.classList.remove("dark");
+            localStorage.setItem("theme", "light");
+        }
+    }, [isDarkMode]);
+
+    // Color Persistence
+    useEffect(() => {
+        localStorage.setItem("accent", accentColor);
+    }, [accentColor]);
+
+    // Data Loading
+    useEffect(() => {
+        fetchWorklogs();
+        fetchStats();
+        loadProjectList();
+        loadJiraIdList();
+    }, []);
+
+    useEffect(() => {
+        applyAllFilters();
+    }, [worklogs, sidebarFilters]);
+
+    // ============= FETCH FUNCTIONS (UNCHANGED LOGIC) =============
+    const fetchWorklogs = async () => {
+        try {
+            const response = await axios.get(`${API_URL}/worklogs`);
+            setWorklogs(response.data);
+        } catch (error) {
+            console.error("Error fetching worklogs:", error);
+        }
+    };
+
+    const fetchStats = async () => {
+        try {
+            const response = await axios.get(`${API_URL}/stats`);
+            setStats(response.data);
+        } catch (error) {
+            console.error("Error fetching stats:", error);
+        }
+    };
+
+    // ============= LIST LOADERS =============
+    const loadProjectList = () => {
+        setProjectList([
+            "Standing Waves",
+            "Mobile App Development",
+            "Web Dashboard",
+            "API Integration",
+            "Database Migration",
+            "Bug Fixes",
+            "Testing",
+            "Documentation",
+            "Code Review",
+            "DevOps",
+            "UI/UX Design",
+        ]);
+    };
+
+    const loadJiraIdList = () => {
+        setJiraIdList([
+            "PROJ-101",
+            "PROJ-102",
+            "BUG-201",
+            "BUG-202",
+            "FEAT-301",
+            "TASK-401",
+            "DOC-501",
+            "TEST-601",
+        ]);
+    };
+
+    // ============= FILTER LOGIC (UNCHANGED) =============
+    const getBaseFilteredLogs = () => {
+        let filtered = [...worklogs];
+
+        // 1️⃣ TODAY (highest priority)
+        if (sidebarFilters.showToday) {
+            const today = new Date().toISOString().split("T")[0];
+            return filtered.filter(
+                (l) => new Date(l.date).toISOString().split("T")[0] === today,
+            );
+        }
+
+        // 2️⃣ MONTH + YEAR
+        if (sidebarFilters.selectedMonth && sidebarFilters.selectedYear) {
+            return filtered.filter((l) => {
+                const d = new Date(l.date);
+                return (
+                    d.getMonth() === parseInt(sidebarFilters.selectedMonth) &&
+                    d.getFullYear() === parseInt(sidebarFilters.selectedYear)
+                );
+            });
+        }
+
+        // 3️⃣ YEAR ONLY
+        if (sidebarFilters.selectedYear && !sidebarFilters.selectedMonth) {
+            return filtered.filter(
+                (l) =>
+                    new Date(l.date).getFullYear() ===
+                    parseInt(sidebarFilters.selectedYear),
+            );
+        }
+
+        // 4️⃣ DATE RANGE (From – To)
+        if (sidebarFilters.dateRange.start && sidebarFilters.dateRange.end) {
+            const start = new Date(sidebarFilters.dateRange.start);
+            const end = new Date(sidebarFilters.dateRange.end);
+            return filtered.filter((l) => {
+                const d = new Date(l.date);
+                return d >= start && d <= end;
+            });
+        }
+
+        // 5️⃣ OTHER FILTERS
+        if (sidebarFilters.selectedProject)
+            filtered = filtered.filter(
+                (l) => l.projectName === sidebarFilters.selectedProject,
+            );
+
+        if (sidebarFilters.selectedStatus)
+            filtered = filtered.filter(
+                (l) => l.status === sidebarFilters.selectedStatus,
+            );
+
+        if (sidebarFilters.selectedJiraId)
+            filtered = filtered.filter(
+                (l) => l.jiraId === sidebarFilters.selectedJiraId,
+            );
+
+        if (sidebarFilters.searchText) {
+            const lower = sidebarFilters.searchText.toLowerCase();
+            filtered = filtered.filter((l) =>
+                Object.values(l).some((val) =>
+                    String(val).toLowerCase().includes(lower),
+                ),
+            );
+        }
+
+        return filtered;
+    };
+
+    const [isDateOpen, setIsDateOpen] = useState(true);
+
+    const applyAllFilters = () => {
+        let data = getBaseFilteredLogs();
+
+        if (sortConfig.key) {
+            data = [...data].sort((a, b) => {
+                let aVal = a[sortConfig.key];
+                let bVal = b[sortConfig.key];
+
+                if (sortConfig.key === "date") {
+                    aVal = new Date(aVal);
+                    bVal = new Date(bVal);
+                }
+
+                if (typeof aVal === "string") {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+
+                if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+                if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+                return 0;
+            });
+        }
+
+        setFilteredLogs(data);
+    };
+
+    const updateFilter = (name, value) => {
+        const newFilters = { ...sidebarFilters, [name]: value };
+
+        if (name === "selectedYear") {
+            newFilters.selectedMonth = "";
+        }
+
+        setSidebarFilters(newFilters);
+    };
+
+    const clearAllFilters = () => {
+        setSidebarFilters({
+            selectedProject: null,
+            selectedStatus: null,
+            selectedJiraId: null,
+            selectedDate: null,
+            dateRange: { start: "", end: "" },
+            searchText: "",
+            showToday: false,
+            selectedMonth: "",
+            selectedYear: "",
+        });
+
+        setSortConfig({ key: null, direction: "asc" });
+    };
+
+    // ============= SORTING =============
+    const handleSort = (key) => {
+        let direction = "asc";
+        if (sortConfig.key === key && sortConfig.direction === "asc")
+            direction = "desc";
+        setSortConfig({ key, direction });
+
+        const handleSort = (key) => {
+            let direction = "asc";
+            if (sortConfig.key === key && sortConfig.direction === "asc") {
+                direction = "desc";
+            }
+            setSortConfig({ key, direction });
+        };
+    };
+
+    // ============= CRUD OPERATIONS =============
+    const openAddModal = () => {
+        setModalMode("add");
+        setFormData({
+            date: "",
+            jiraId: "",
+            description: "",
+            timeLogged: "",
+            status: "",
+            projectName: "",
+            remarks: "",
+        });
+        setIsModalOpen(true);
+    };
+
+    const openEditModal = (log) => {
+        setModalMode("edit");
+        setEditingId(log.id);
+        setFormData({
+            date: log.date
+                ? new Date(log.date).toISOString().split("T")[0]
+                : "",
+            jiraId: log.jiraId || "",
+            description: log.description || "",
+            timeLogged: log.timeLogged || "",
+            status: log.status || "",
+            projectName: log.projectName || "",
+            remarks: log.remarks || "",
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            if (modalMode === "add") {
+                await axios.post(`${API_URL}/worklogs`, formData);
+            } else {
+                await axios.put(`${API_URL}/worklogs/${editingId}`, formData);
+            }
+            fetchWorklogs();
+            fetchStats();
+            setIsModalOpen(false);
+        } catch (error) {
+            console.error("Error saving worklog:", error);
+            alert("Operation failed");
+        }
+    };
+
+    const handleDelete = async (id) => {
+        if (!window.confirm("Delete this entry?")) return;
+        try {
+            await axios.delete(`${API_URL}/worklogs/${id}`);
+            fetchWorklogs();
+            fetchStats();
+        } catch (error) {
+            console.error("Delete failed", error);
+        }
+    };
+
+    const handleFileUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+            await axios.post(`${API_URL}/upload`, fd, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            fetchWorklogs();
+            fetchStats();
+            alert("Uploaded successfully!");
+        } catch (error) {
+            alert("Upload failed");
+        }
+    };
+
+    // ============= EXPORT =============
+    const exportToCSV = () => {
+        /* Logic same as original */
+        const headers = [
+            "Date",
+            "JIRA ID",
+            "Description",
+            "Time",
+            "Status",
+            "Project",
+            "Remarks",
+        ];
+        const rows = filteredLogs.map((l) => [
+            formatDate(l.date),
+            l.jiraId,
+            `"${l.description}"`,
+            l.timeLogged,
+            l.status,
+            l.projectName,
+            `"${l.remarks}"`,
+        ]);
+        const csvContent = [
+            headers.join(","),
+            ...rows.map((r) => r.join(",")),
+        ].join("\n");
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(
+            new Blob([csvContent], { type: "text/csv" }),
+        );
+        link.download = "worklogs.csv";
+        link.click();
+    };
+
+    const exportToXLSX = () => {
+        /* Logic same as original */
+        const ws = XLSX.utils.json_to_sheet(filteredLogs);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Worklogs");
+        XLSX.writeFile(wb, "worklogs.xlsx");
+    };
+
+    // Helpers
+    const formatDate = (d) =>
+        d
+            ? new Date(d).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+              })
+            : "N/A";
+    const getTheme = () => THEMES[accentColor];
+
+    // Lists for dropdowns (Dynamic based on filtered data for cascading)
+    const getAvailableList = (key) =>
+        [...new Set(filteredLogs.map((l) => l[key]).filter(Boolean))].sort();
+
+    const { start, end } = sidebarFilters.dateRange;
+
+    const availableYears =
+        start && end
+            ? getYearsBetween(
+                  new Date(start).getFullYear(),
+                  new Date(end).getFullYear(),
+              )
+            : [];
+
+    const availableMonths =
+        sidebarFilters.selectedYear && start && end
+            ? getMonthsForYear(
+                  parseInt(sidebarFilters.selectedYear),
+                  start,
+                  end,
+              )
+            : [];
+
+    // ============= RENDER =============
+    return (
+        <div
+            className={`min-h-screen transition-colors duration-300 ${isDarkMode ? "bg-slate-950 text-slate-100" : "bg-gray-50 text-gray-900"} font-sans`}>
+            {/* ============= SIDEBAR ============= */}
+            <aside
+                className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 border-r ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"} ${isSidebarOpen ? "w-72" : "w-20"}`}>
+                {/* Logo */}
+                <div className="h-16 flex items-center justify-center border-b border-gray-200 dark:border-slate-800">
+                    <div
+                        className={`flex items-center gap-2 font-bold text-xl ${getTheme().text}`}>
+                        <LayoutDashboard className="w-8 h-8" />
+                        {isSidebarOpen && <span>WorkLog Pro</span>}
+                    </div>
+                </div>
+
+                {/* Filter Controls */}
+                <div className="p-4 overflow-y-auto h-[calc(100vh-4rem)] scrollbar-hide">
+                    <button
+                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        className={`mb-6 w-full flex items-center justify-center p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-slate-800" : "hover:bg-gray-100"}`}>
+                        <Menu className="w-5 h-5" />
+                    </button>
+
+                    {isSidebarOpen ? (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
+                            {/* Search */}
+                            <div className="relative">
+                                <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Global Search..."
+                                    value={sidebarFilters.searchText}
+                                    onChange={(e) =>
+                                        updateFilter(
+                                            "searchText",
+                                            e.target.value,
+                                        )
+                                    }
+                                    className={`w-full pl-9 pr-4 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 ${isDarkMode ? "bg-slate-800 border-slate-700 text-white focus:ring-slate-600" : "bg-white border-gray-200 focus:ring-blue-100"}`}
+                                />
+                            </div>
+
+                            {/* Filters Section */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between text-xs font-semibold uppercase text-gray-500 tracking-wider">
+                                    <span>Smart Filters</span>
+                                    <Filter className="w-3 h-3" />
+                                </div>
+
+                                {/* Project Filter */}
+                                <FilterDropdown
+                                    label="Project"
+                                    icon={<Briefcase className="w-4 h-4" />}
+                                    value={sidebarFilters.selectedProject}
+                                    onChange={(val) =>
+                                        updateFilter("selectedProject", val)
+                                    }
+                                    options={getAvailableList("projectName")} // Logic simplified: Use getAvailableList helper based on current filteredLogs implies cascade visual, though pure cascade logic is in updateFilter
+                                    theme={getTheme()}
+                                    isDark={isDarkMode}
+                                />
+
+                                {/* Status Filter */}
+                                <FilterDropdown
+                                    label="Status"
+                                    icon={<CheckCircle2 className="w-4 h-4" />}
+                                    value={sidebarFilters.selectedStatus}
+                                    onChange={(val) =>
+                                        updateFilter("selectedStatus", val)
+                                    }
+                                    options={[
+                                        "Done",
+                                        "In Progress",
+                                        "Pending",
+                                        "Blocked",
+                                    ]}
+                                    theme={getTheme()}
+                                    isDark={isDarkMode}
+                                />
+
+                                {/* Jira Filter */}
+                                <FilterDropdown
+                                    label="Jira ID"
+                                    icon={<Hash className="w-4 h-4" />}
+                                    value={sidebarFilters.selectedJiraId}
+                                    onChange={(val) =>
+                                        updateFilter("selectedJiraId", val)
+                                    }
+                                    options={getAvailableList("jiraId")}
+                                    theme={getTheme()}
+                                    isDark={isDarkMode}
+                                />
+
+                                {/* Date Range */}
+                                <div
+                                    className={`rounded-lg border ${
+                                        isDarkMode
+                                            ? "bg-slate-800/50 border-slate-700"
+                                            : "bg-gray-50 border-gray-200"
+                                    }`}>
+                                    {/* Header */}
+                                    <button
+                                        onClick={() =>
+                                            setIsDateOpen(!isDateOpen)
+                                        }
+                                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold">
+                                        <span>Advanced Date Filter</span>
+                                        {isDateOpen ? (
+                                            <ChevronUp className="w-4 h-4" />
+                                        ) : (
+                                            <ChevronDown className="w-4 h-4" />
+                                        )}
+                                    </button>
+
+                                    {/* Body */}
+                                    {isDateOpen && (
+                                        <div className="p-3 space-y-3">
+                                            {/* Date Range */}
+                                            <div>
+                                                <label className="text-xs font-medium mb-1 block">
+                                                    Date Range
+                                                </label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <input
+                                                        type="date"
+                                                        disabled={
+                                                            sidebarFilters.selectedMonth ||
+                                                            sidebarFilters.selectedYear
+                                                        }
+                                                        value={
+                                                            sidebarFilters
+                                                                .dateRange.start
+                                                        }
+                                                        onChange={(e) =>
+                                                            updateFilter(
+                                                                "dateRange",
+                                                                {
+                                                                    ...sidebarFilters.dateRange,
+                                                                    start: e
+                                                                        .target
+                                                                        .value,
+                                                                },
+                                                            )
+                                                        }
+                                                        className="text-xs p-1.5 rounded border"
+                                                    />
+
+                                                    <div className="relative">
+                                                        <input
+                                                            type="date"
+                                                            disabled={
+                                                                sidebarFilters.selectedMonth ||
+                                                                sidebarFilters.selectedYear
+                                                            }
+                                                            value={
+                                                                sidebarFilters
+                                                                    .dateRange
+                                                                    .end
+                                                            }
+                                                            onChange={(e) =>
+                                                                updateFilter(
+                                                                    "dateRange",
+                                                                    {
+                                                                        ...sidebarFilters.dateRange,
+                                                                        end: e
+                                                                            .target
+                                                                            .value,
+                                                                    },
+                                                                )
+                                                            }
+                                                            className="text-xs p-1.5 rounded border w-full"
+                                                        />
+                                                        <button
+                                                            onClick={() =>
+                                                                updateFilter(
+                                                                    "dateRange",
+                                                                    {
+                                                                        start: sidebarFilters
+                                                                            .dateRange
+                                                                            .start,
+                                                                        end: new Date()
+                                                                            .toISOString()
+                                                                            .split(
+                                                                                "T",
+                                                                            )[0],
+                                                                    },
+                                                                )
+                                                            }
+                                                            className="absolute right-1 top-1 text-[10px] text-blue-600">
+                                                            Go to Today
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Month / Year */}
+                                            <div>
+                                                <label className="text-xs font-medium mb-1 block">
+                                                    Month / Year (from Date
+                                                    Range)
+                                                </label>
+
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {/* YEAR */}
+                                                    <select
+                                                        value={
+                                                            sidebarFilters.selectedYear
+                                                        }
+                                                        disabled={
+                                                            !start || !end
+                                                        }
+                                                        onChange={(e) =>
+                                                            updateFilter(
+                                                                "selectedYear",
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                        className="text-xs p-1.5 rounded border disabled:opacity-50">
+                                                        <option value="">
+                                                            Year
+                                                        </option>
+                                                        {availableYears.map(
+                                                            (y) => (
+                                                                <option
+                                                                    key={y}
+                                                                    value={y}>
+                                                                    {y}
+                                                                </option>
+                                                            ),
+                                                        )}
+                                                    </select>
+
+                                                    {/* MONTH */}
+                                                    <select
+                                                        value={
+                                                            sidebarFilters.selectedMonth
+                                                        }
+                                                        disabled={
+                                                            !sidebarFilters.selectedYear
+                                                        }
+                                                        onChange={(e) =>
+                                                            updateFilter(
+                                                                "selectedMonth",
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                        className="text-xs p-1.5 rounded border disabled:opacity-50">
+                                                        <option value="">
+                                                            Month
+                                                        </option>
+                                                        {availableMonths.map(
+                                                            (m) => (
+                                                                <option
+                                                                    key={m}
+                                                                    value={m}>
+                                                                    {new Date(
+                                                                        0,
+                                                                        m,
+                                                                    ).toLocaleString(
+                                                                        "en",
+                                                                        {
+                                                                            month: "short",
+                                                                        },
+                                                                    )}
+                                                                </option>
+                                                            ),
+                                                        )}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button
+                                    onClick={() =>
+                                        setSidebarFilters({
+                                            ...sidebarFilters,
+                                            showToday:
+                                                !sidebarFilters.showToday,
+                                            dateRange: { start: "", end: "" },
+                                            selectedMonth: "",
+                                            selectedYear: "",
+                                        })
+                                    }
+                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium ${
+                                        sidebarFilters.showToday
+                                            ? "bg-blue-600 text-white"
+                                            : isDarkMode
+                                              ? "bg-slate-800 hover:bg-slate-700"
+                                              : "bg-gray-100 hover:bg-gray-200"
+                                    }`}>
+                                    <span>Today’s Worklogs</span>
+                                    <Calendar className="w-4 h-4" />
+                                </button>
+
+                                <button
+                                    onClick={clearAllFilters}
+                                    className={`w-full py-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors`}>
+                                    Reset Filters
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center gap-4">
+                            <Search className="w-5 h-5 text-gray-400" />
+                            <Briefcase className="w-5 h-5 text-gray-400" />
+                            <CheckCircle2 className="w-5 h-5 text-gray-400" />
+                        </div>
+                    )}
+                </div>
+            </aside>
+
+            {/* ============= MAIN CONTENT ============= */}
+            <div
+                className={`transition-all duration-300 ${isSidebarOpen ? "ml-72" : "ml-20"}`}>
+                {/* Header */}
+                <header
+                    className={`sticky top-0 z-30 h-16 px-8 flex items-center justify-between backdrop-blur-md border-b ${isDarkMode ? "bg-slate-950/80 border-slate-800" : "bg-white/80 border-gray-200"}`}>
+                    <div className="flex items-center gap-4">
+                        <h2 className="text-xl font-bold">Dashboard</h2>
+                        <div
+                            className={`text-xs px-2 py-1 rounded-full ${getTheme().light} ${getTheme().text} font-medium border ${getTheme().border}`}>
+                            {filteredLogs.length} Entries Found
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        {/* Color Picker */}
+                        <div className="flex items-center gap-1 p-1 rounded-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                            {Object.keys(THEMES).map((color) => (
+                                <button
+                                    key={color}
+                                    onClick={() => setAccentColor(color)}
+                                    className={`w-4 h-4 rounded-full transition-transform hover:scale-110 ${THEMES[color].primary} ${accentColor === color ? "ring-2 ring-offset-1 ring-offset-white dark:ring-offset-slate-950 " + THEMES[color].ring : ""}`}
+                                />
+                            ))}
+                        </div>
+
+                        {/* Theme Toggle */}
+                        <button
+                            onClick={() => setIsDarkMode(!isDarkMode)}
+                            className={`p-2 rounded-full transition-colors ${isDarkMode ? "hover:bg-slate-800 text-yellow-400" : "hover:bg-gray-100 text-slate-600"}`}>
+                            {isDarkMode ? (
+                                <Sun className="w-5 h-5" />
+                            ) : (
+                                <Moon className="w-5 h-5" />
+                            )}
+                        </button>
+                    </div>
+                </header>
+
+                {/* Content Area */}
+                <main className="p-8">
+                    {/* Stats Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                        <StatCard
+                            title="Total Worklogs"
+                            value={stats.totalLogs}
+                            icon={<FileSpreadsheet />}
+                            color={getTheme().text}
+                            bg={getTheme().light}
+                        />
+                        <StatCard
+                            title="Active Projects"
+                            value={stats.totalProjects}
+                            icon={<Briefcase />}
+                            color="text-emerald-600"
+                            bg="bg-emerald-50 dark:bg-emerald-900/20"
+                        />
+                        <StatCard
+                            title="Hours Logged"
+                            value="124h"
+                            icon={<Clock />}
+                            color="text-amber-600"
+                            bg="bg-amber-50 dark:bg-amber-900/20"
+                        />
+                        <StatCard
+                            title="Tasks Done"
+                            value={
+                                worklogs.filter((l) => l.status === "Done")
+                                    .length
+                            }
+                            icon={<CheckCircle2 />}
+                            color="text-blue-600"
+                            bg="bg-blue-50 dark:bg-blue-900/20"
+                        />
+                    </div>
+
+                    {/* Action Bar */}
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                        <div className="flex gap-2">
+                            <button
+                                onClick={openAddModal}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 ${getTheme().primary} ${getTheme().hover}`}>
+                                <Plus className="w-4 h-4" /> Add Entry
+                            </button>
+                            <label
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border transition-colors ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`}>
+                                <Upload className="w-4 h-4" /> Import CSV
+                                <input
+                                    type="file"
+                                    onChange={handleFileUpload}
+                                    accept=".xlsx,.csv"
+                                    className="hidden"
+                                />
+                            </label>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                onClick={exportToCSV}
+                                className={`p-2 rounded-lg border transition-colors ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`}
+                                title="Export CSV">
+                                <Download className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={exportToXLSX}
+                                className={`p-2 rounded-lg border transition-colors ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`}
+                                title="Export Excel">
+                                <FileSpreadsheet className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Data Table */}
+                    <div
+                        className={`rounded-xl border shadow-sm overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        setColumnMenu({
+                                            open: true,
+                                            x: e.clientX,
+                                            y: e.clientY,
+                                        });
+                                    }}
+                                    className={`text-xs uppercase font-semibold ${
+                                        isDarkMode
+                                            ? "bg-slate-950/50 text-slate-400"
+                                            : "bg-gray-50 text-gray-500"
+                                    }`}>
+                                    <tr>
+                                        {ALL_COLUMNS.map((col) => {
+                                            if (
+                                                !visibleColumns.includes(
+                                                    col.key,
+                                                )
+                                            )
+                                                return null;
+
+                                            if (col.sortable) {
+                                                return (
+                                                    <SortableHeader
+                                                        key={col.key}
+                                                        label={
+                                                            col.key ===
+                                                            "timeLogged"
+                                                                ? `Time (${calculateTotalTime()})`
+                                                                : col.label
+                                                        }
+                                                        fKey={col.key}
+                                                        sortConfig={sortConfig}
+                                                        onSort={handleSort}
+                                                    />
+                                                );
+                                            }
+
+                                            return (
+                                                <th
+                                                    key={col.key}
+                                                    className="px-6 py-4">
+                                                    {col.label}
+                                                </th>
+                                            );
+                                        })}
+                                        <th className="px-6 py-4 text-right">
+                                            Actions
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 dark:divide-slate-800">
+                                    {filteredLogs.length === 0 ? (
+                                        <tr>
+                                            <td
+                                                colSpan="7"
+                                                className="px-6 py-12 text-center text-gray-500">
+                                                <div className="flex flex-col items-center justify-center gap-2">
+                                                    <AlertCircle className="w-8 h-8 opacity-20" />
+                                                    <p>No records found</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredLogs.map((log) => (
+                                            <tr
+                                                key={log.id}
+                                                className={`group transition-colors ${isDarkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}`}>
+                                                {visibleColumns.includes(
+                                                    "date",
+                                                ) && (
+                                                    <td className="px-6 py-4 font-medium">
+                                                        {formatDate(log.date)}
+                                                    </td>
+                                                )}
+
+                                                {visibleColumns.includes(
+                                                    "jiraId",
+                                                ) && (
+                                                    <td className="px-6 py-4">
+                                                        <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
+                                                            {log.jiraId}
+                                                        </span>
+                                                    </td>
+                                                )}
+
+                                                {visibleColumns.includes(
+                                                    "description",
+                                                ) && (
+                                                    <td className="px-6 py-4 max-w-xs truncate">
+                                                        {log.description}
+                                                    </td>
+                                                )}
+
+                                                {visibleColumns.includes(
+                                                    "timeLogged",
+                                                ) && (
+                                                    <td className="px-6 py-4 font-mono text-xs">
+                                                        {log.timeLogged}
+                                                    </td>
+                                                )}
+
+                                                {visibleColumns.includes(
+                                                    "status",
+                                                ) && (
+                                                    <td className="px-6 py-4">
+                                                        <StatusBadge
+                                                            status={log.status}
+                                                        />
+                                                    </td>
+                                                )}
+
+                                                {visibleColumns.includes(
+                                                    "projectName",
+                                                ) && (
+                                                    <td className="px-6 py-4">
+                                                        {log.projectName}
+                                                    </td>
+                                                )}
+
+                                                {visibleColumns.includes(
+                                                    "remarks",
+                                                ) && (
+                                                    <td className="px-6 py-4 text-xs opacity-80">
+                                                        {log.remarks || "—"}
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            {/* ============= MODAL ============= */}
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div
+                        className={`w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden ${isDarkMode ? "bg-slate-900 border border-slate-800" : "bg-white"}`}>
+                        <div
+                            className={`px-6 py-4 border-b flex items-center justify-between ${isDarkMode ? "border-slate-800" : "border-gray-100"}`}>
+                            <h3 className="text-lg font-bold flex items-center gap-2">
+                                {modalMode === "add" ? (
+                                    <Plus
+                                        className={`w-5 h-5 ${getTheme().text}`}
+                                    />
+                                ) : (
+                                    <Edit2
+                                        className={`w-5 h-5 ${getTheme().text}`}
+                                    />
+                                )}
+                                {modalMode === "add"
+                                    ? "New Entry"
+                                    : "Edit Entry"}
+                            </h3>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <InputGroup
+                                    label="Date"
+                                    type="date"
+                                    value={formData.date}
+                                    onChange={(e) =>
+                                        setFormData({
+                                            ...formData,
+                                            date: e.target.value,
+                                        })
+                                    }
+                                    isDark={isDarkMode}
+                                    required
+                                />
+                                <SelectGroup
+                                    label="Jira ID"
+                                    value={formData.jiraId}
+                                    onChange={(e) =>
+                                        setFormData({
+                                            ...formData,
+                                            jiraId: e.target.value,
+                                        })
+                                    }
+                                    options={jiraIdList}
+                                    isDark={isDarkMode}
+                                    required
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <SelectGroup
+                                    label="Project"
+                                    value={formData.projectName}
+                                    onChange={(e) =>
+                                        setFormData({
+                                            ...formData,
+                                            projectName: e.target.value,
+                                        })
+                                    }
+                                    options={projectList}
+                                    isDark={isDarkMode}
+                                    required
+                                />
+                                <div className="grid grid-cols-2 gap-2">
+                                    <InputGroup
+                                        label="Time"
+                                        placeholder="e.g. 2h 30m"
+                                        value={formData.timeLogged}
+                                        onChange={(e) =>
+                                            setFormData({
+                                                ...formData,
+                                                timeLogged: e.target.value,
+                                            })
+                                        }
+                                        isDark={isDarkMode}
+                                        required
+                                    />
+                                    <SelectGroup
+                                        label="Status"
+                                        value={formData.status}
+                                        onChange={(e) =>
+                                            setFormData({
+                                                ...formData,
+                                                status: e.target.value,
+                                            })
+                                        }
+                                        options={[
+                                            "Done",
+                                            "In Progress",
+                                            "Pending",
+                                            "Blocked",
+                                        ]}
+                                        isDark={isDarkMode}
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium mb-1.5 opacity-70">
+                                    Description
+                                </label>
+                                <textarea
+                                    rows="3"
+                                    className={`w-full px-3 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-opacity-50 outline-none transition-all ${isDarkMode ? "bg-slate-950 border-slate-700 focus:ring-blue-500" : "bg-white border-gray-300 focus:ring-blue-500"}`}
+                                    value={formData.description}
+                                    onChange={(e) =>
+                                        setFormData({
+                                            ...formData,
+                                            description: e.target.value,
+                                        })
+                                    }
+                                    required
+                                />
+                            </div>
+
+                            <InputGroup
+                                label="Remarks (Optional)"
+                                value={formData.remarks}
+                                onChange={(e) =>
+                                    setFormData({
+                                        ...formData,
+                                        remarks: e.target.value,
+                                    })
+                                }
+                                isDark={isDarkMode}
+                            />
+
+                            <div className="pt-4 flex justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? "hover:bg-slate-800" : "hover:bg-gray-100"}`}>
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className={`px-6 py-2 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-500/20 active:scale-95 transition-all ${getTheme().primary} ${getTheme().hover}`}>
+                                    Save Entry
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+            {columnMenu.open && (
+                <div
+                    style={{ top: columnMenu.y, left: columnMenu.x }}
+                    className="fixed z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-3"
+                    onMouseLeave={() =>
+                        setColumnMenu({ ...columnMenu, open: false })
+                    }>
+                    <p className="text-xs font-semibold mb-2 opacity-60">
+                        Toggle Columns
+                    </p>
+                    {ALL_COLUMNS.map((c) => (
+                        <label
+                            key={c.key}
+                            className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={visibleColumns.includes(c.key)}
+                                onChange={() =>
+                                    setVisibleColumns((prev) =>
+                                        prev.includes(c.key)
+                                            ? prev.filter((x) => x !== c.key)
+                                            : [...prev, c.key],
+                                    )
+                                }
+                            />
+                            {c.label}
+                        </label>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ============= SUB COMPONENTS =============
+
+const StatCard = ({ title, value, icon, color, bg }) => (
+    <div
+        className={`p-5 rounded-xl border flex items-center justify-between dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-all`}>
+        <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                {title}
+            </p>
+            <h4 className="text-2xl font-bold mt-1">{value}</h4>
+        </div>
+        <div className={`p-3 rounded-lg ${bg} ${color}`}>
+            {React.cloneElement(icon, { className: "w-6 h-6" })}
+        </div>
+    </div>
+);
+
+const FilterDropdown = ({
+    label,
+    icon,
+    value,
+    onChange,
+    options,
+    theme,
+    isDark,
+}) => (
+    <div
+        className={`p-3 rounded-lg border transition-colors ${value ? `${theme.light} ${theme.border}` : isDark ? "bg-slate-800/50 border-slate-700" : "bg-gray-50 border-gray-200"}`}>
+        <label className="flex items-center gap-2 text-xs font-semibold mb-2 opacity-70">
+            {icon} {label}
+        </label>
+        <select
+            value={value || ""}
+            onChange={(e) => onChange(e.target.value || null)}
+            className={`w-full bg-transparent text-sm font-medium outline-none cursor-pointer ${value ? theme.text : ""}`}>
+            <option value="">All {label}s</option>
+            {options.map((opt) => (
+                <option
+                    key={opt}
+                    value={opt}
+                    className={isDark ? "bg-slate-900" : ""}>
+                    {opt}
+                </option>
+            ))}
+        </select>
+    </div>
+);
+
+const SortableHeader = ({ label, fKey, sortConfig, onSort }) => (
+    <th
+        onClick={() => onSort(fKey)}
+        className="px-6 py-4 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300 transition-colors select-none group">
+        <div className="flex items-center gap-1">
+            {label}
+            <div className="flex flex-col">
+                <ChevronUp
+                    className={`w-3 h-3 -mb-1 ${sortConfig.key === fKey && sortConfig.direction === "asc" ? "text-blue-500" : "text-gray-300 dark:text-slate-600"}`}
+                />
+                <ChevronDown
+                    className={`w-3 h-3 ${sortConfig.key === fKey && sortConfig.direction === "desc" ? "text-blue-500" : "text-gray-300 dark:text-slate-600"}`}
+                />
+            </div>
+        </div>
+    </th>
+);
+
+const StatusBadge = ({ status }) => {
+    const styles = {
+        Done: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
+        "In Progress":
+            "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
+        Pending:
+            "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
+        Blocked:
+            "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400",
+    };
+    return (
+        <span
+            className={`px-2.5 py-1 rounded-md text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>
+            {status}
+        </span>
+    );
+};
+
+const InputGroup = ({ label, isDark, ...props }) => (
+    <div>
+        <label className="block text-xs font-medium mb-1.5 opacity-70">
+            {label}
+        </label>
+        <input
+            className={`w-full px-3 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-opacity-50 outline-none transition-all ${isDark ? "bg-slate-950 border-slate-700 focus:ring-blue-500" : "bg-white border-gray-300 focus:ring-blue-500"}`}
+            {...props}
+        />
+    </div>
+);
+
+const SelectGroup = ({ label, options, isDark, ...props }) => (
+    <div>
+        <label className="block text-xs font-medium mb-1.5 opacity-70">
+            {label}
+        </label>
+        <select
+            className={`w-full px-3 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-opacity-50 outline-none transition-all ${isDark ? "bg-slate-950 border-slate-700 focus:ring-blue-500" : "bg-white border-gray-300 focus:ring-blue-500"}`}
+            {...props}>
+            <option value="">Select...</option>
+            {options.map((o) => (
+                <option key={o} value={o}>
+                    {o}
+                </option>
+            ))}
+        </select>
+    </div>
+);
+
+export default App;

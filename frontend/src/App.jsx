@@ -25,6 +25,9 @@ import {
     Briefcase,
     Hash,
     ListFilter,
+    Merge,
+    Split,
+    ChevronRight,
 } from "lucide-react";
 
 // Base URL for API calls
@@ -74,6 +77,7 @@ const THEMES = {
     },
 };
 
+// Column definitions for normal view
 const ALL_COLUMNS = [
     { key: "date", label: "Date", sortable: true },
     { key: "jiraId", label: "Jira ID", sortable: true },
@@ -84,32 +88,27 @@ const ALL_COLUMNS = [
     { key: "remarks", label: "Remarks" },
 ];
 
+// Column definitions for merged view
+const MERGED_COLUMNS = [
+    { key: "no", label: "No.", sortable: false },
+    { key: "jiraId", label: "JIRA ID", sortable: true },
+    { key: "description", label: "Description" },
+    { key: "startDate", label: "Start Date", sortable: true },
+    { key: "endDate", label: "End Date", sortable: true },
+    { key: "totalTime", label: "Total Time", sortable: true },
+    { key: "projectName", label: "Project", sortable: true },
+];
+
+// Search column options
+const SEARCH_COLUMNS = [
+    { key: "all", label: "All Columns" },
+    { key: "jiraId", label: "JIRA ID" },
+    { key: "description", label: "Description" },
+    { key: "projectName", label: "Project" },
+    { key: "status", label: "Status" },
+];
+
 function App() {
-    const getYearsBetween = (start, end) => {
-        const years = [];
-        for (let y = start; y <= end; y++) {
-            years.push(y);
-        }
-        return years;
-    };
-
-    const getMonthsForYear = (year, startDate, endDate) => {
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-
-        let from = 0;
-        let to = 11;
-
-        if (year === start.getFullYear()) {
-            from = start.getMonth();
-        }
-        if (year === end.getFullYear()) {
-            to = end.getMonth();
-        }
-
-        return Array.from({ length: to - from + 1 }, (_, i) => from + i);
-    };
-
     // ============= UI STATE =============
     const [isDarkMode, setIsDarkMode] = useState(
         () => localStorage.getItem("theme") === "dark",
@@ -119,11 +118,14 @@ function App() {
     );
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalMode, setModalMode] = useState("add"); // 'add' or 'edit'
+    const [modalMode, setModalMode] = useState("add");
+    const [isMerged, setIsMerged] = useState(false);
+    const [expandedRows, setExpandedRows] = useState({}); // NEW: Track which merged rows are expanded
 
     // ============= DATA STATE =============
     const [worklogs, setWorklogs] = useState([]);
     const [filteredLogs, setFilteredLogs] = useState([]);
+    const [mergedLogs, setMergedLogs] = useState([]);
     const [stats, setStats] = useState({
         totalLogs: 0,
         projects: [],
@@ -162,6 +164,9 @@ function App() {
         key: null,
         direction: "asc",
     });
+
+    const [searchColumn, setSearchColumn] = useState("all");
+
     const [sidebarFilters, setSidebarFilters] = useState({
         selectedProject: null,
         selectedStatus: null,
@@ -170,20 +175,22 @@ function App() {
         dateRange: { start: "", end: "" },
         searchText: "",
         showToday: false,
-        selectedMonth: "",
-        selectedYear: "",
     });
 
     // Lists
     const [projectList, setProjectList] = useState([]);
     const [jiraIdList, setJiraIdList] = useState([]);
+
+    // Calculate total time for current view
     const calculateTotalTime = () => {
         let totalMinutes = 0;
+        const dataToUse = isMerged ? mergedLogs : filteredLogs;
 
-        filteredLogs.forEach((l) => {
-            if (!l.timeLogged) return;
-            const h = l.timeLogged.match(/(\d+)h/);
-            const m = l.timeLogged.match(/(\d+)m/);
+        dataToUse.forEach((l) => {
+            const timeField = isMerged ? l.totalTime : l.timeLogged;
+            if (!timeField) return;
+            const h = timeField.match(/(\d+)h/);
+            const m = timeField.match(/(\d+)m/);
             if (h) totalMinutes += parseInt(h[1]) * 60;
             if (m) totalMinutes += parseInt(m[1]);
         });
@@ -193,10 +200,72 @@ function App() {
         return `${hours}h ${minutes}m`;
     };
 
+    // ============= MERGE LOGIC =============
+    // This function combines entries with same JIRA ID + Project
+    const mergeWorklogs = (logs) => {
+        const grouped = {};
+
+        // Group logs by JIRA ID + Project Name
+        logs.forEach((log) => {
+            const key = `${log.jiraId}_${log.projectName}`;
+
+            if (!grouped[key]) {
+                grouped[key] = [];
+            }
+            grouped[key].push(log);
+        });
+
+        // Convert grouped data to merged format
+        const merged = Object.entries(grouped).map(([key, entries], index) => {
+            // Sort entries by date to get start and end dates
+            const sortedEntries = entries.sort(
+                (a, b) => new Date(a.date) - new Date(b.date),
+            );
+
+            // Calculate total time
+            let totalMinutes = 0;
+            entries.forEach((entry) => {
+                if (entry.timeLogged) {
+                    const h = entry.timeLogged.match(/(\d+)h/);
+                    const m = entry.timeLogged.match(/(\d+)m/);
+                    if (h) totalMinutes += parseInt(h[1]) * 60;
+                    if (m) totalMinutes += parseInt(m[1]);
+                }
+            });
+
+            const totalHours = Math.floor(totalMinutes / 60);
+            const totalMins = totalMinutes % 60;
+            const totalTime = `${totalHours}h ${totalMins}m`;
+
+            return {
+                id: key, // Unique identifier for this merged group
+                no: index + 1,
+                jiraId: sortedEntries[0].jiraId,
+                description: sortedEntries[0].description,
+                startDate: sortedEntries[0].date,
+                endDate: sortedEntries[sortedEntries.length - 1].date,
+                totalTime: totalTime,
+                projectName: sortedEntries[0].projectName,
+                entryCount: entries.length,
+                originalEntries: sortedEntries, // NEW: Store original entries for expansion
+            };
+        });
+
+        return merged;
+    };
+
+    // NEW: Toggle row expansion
+    const toggleRowExpansion = (rowId) => {
+        setExpandedRows((prev) => ({
+            ...prev,
+            [rowId]: !prev[rowId],
+        }));
+    };
+
     // ============= EFFECTS =============
     useEffect(() => {
         applyAllFilters();
-    }, [worklogs, sidebarFilters, sortConfig]);
+    }, [worklogs, sidebarFilters, sortConfig, searchColumn]);
 
     // Theme Effect
     useEffect(() => {
@@ -223,11 +292,14 @@ function App() {
         loadJiraIdList();
     }, []);
 
+    // Update merged logs when filtered logs change
     useEffect(() => {
-        applyAllFilters();
-    }, [worklogs, sidebarFilters]);
+        if (isMerged) {
+            setMergedLogs(mergeWorklogs(filteredLogs));
+        }
+    }, [filteredLogs, isMerged]);
 
-    // ============= FETCH FUNCTIONS (UNCHANGED LOGIC) =============
+    // ============= FETCH FUNCTIONS =============
     const fetchWorklogs = async () => {
         try {
             const response = await axios.get(`${API_URL}/worklogs`);
@@ -276,7 +348,7 @@ function App() {
         ]);
     };
 
-    // ============= FILTER LOGIC (UNCHANGED) =============
+    // ============= FILTER LOGIC =============
     const getBaseFilteredLogs = () => {
         let filtered = [...worklogs];
 
@@ -288,37 +360,17 @@ function App() {
             );
         }
 
-        // 2️⃣ MONTH + YEAR
-        if (sidebarFilters.selectedMonth && sidebarFilters.selectedYear) {
-            return filtered.filter((l) => {
-                const d = new Date(l.date);
-                return (
-                    d.getMonth() === parseInt(sidebarFilters.selectedMonth) &&
-                    d.getFullYear() === parseInt(sidebarFilters.selectedYear)
-                );
-            });
-        }
-
-        // 3️⃣ YEAR ONLY
-        if (sidebarFilters.selectedYear && !sidebarFilters.selectedMonth) {
-            return filtered.filter(
-                (l) =>
-                    new Date(l.date).getFullYear() ===
-                    parseInt(sidebarFilters.selectedYear),
-            );
-        }
-
-        // 4️⃣ DATE RANGE (From – To)
+        // 2️⃣ DATE RANGE (From – To)
         if (sidebarFilters.dateRange.start && sidebarFilters.dateRange.end) {
             const start = new Date(sidebarFilters.dateRange.start);
             const end = new Date(sidebarFilters.dateRange.end);
-            return filtered.filter((l) => {
+            filtered = filtered.filter((l) => {
                 const d = new Date(l.date);
                 return d >= start && d <= end;
             });
         }
 
-        // 5️⃣ OTHER FILTERS
+        // 3️⃣ OTHER FILTERS
         if (sidebarFilters.selectedProject)
             filtered = filtered.filter(
                 (l) => l.projectName === sidebarFilters.selectedProject,
@@ -334,19 +386,27 @@ function App() {
                 (l) => l.jiraId === sidebarFilters.selectedJiraId,
             );
 
+        // 4️⃣ SEARCH TEXT (with column filter)
         if (sidebarFilters.searchText) {
             const lower = sidebarFilters.searchText.toLowerCase();
-            filtered = filtered.filter((l) =>
-                Object.values(l).some((val) =>
-                    String(val).toLowerCase().includes(lower),
-                ),
-            );
+
+            if (searchColumn === "all") {
+                // Search in all columns
+                filtered = filtered.filter((l) =>
+                    Object.values(l).some((val) =>
+                        String(val).toLowerCase().includes(lower),
+                    ),
+                );
+            } else {
+                // Search in specific column
+                filtered = filtered.filter((l) =>
+                    String(l[searchColumn]).toLowerCase().includes(lower),
+                );
+            }
         }
 
         return filtered;
     };
-
-    const [isDateOpen, setIsDateOpen] = useState(true);
 
     const applyAllFilters = () => {
         let data = getBaseFilteredLogs();
@@ -356,7 +416,11 @@ function App() {
                 let aVal = a[sortConfig.key];
                 let bVal = b[sortConfig.key];
 
-                if (sortConfig.key === "date") {
+                if (
+                    sortConfig.key === "date" ||
+                    sortConfig.key === "startDate" ||
+                    sortConfig.key === "endDate"
+                ) {
                     aVal = new Date(aVal);
                     bVal = new Date(bVal);
                 }
@@ -376,13 +440,25 @@ function App() {
     };
 
     const updateFilter = (name, value) => {
-        const newFilters = { ...sidebarFilters, [name]: value };
-
-        if (name === "selectedYear") {
-            newFilters.selectedMonth = "";
+        // NEW: When date range changes, turn off Today's filter
+        if (name === "dateRange" && (value.start || value.end)) {
+            setSidebarFilters({
+                ...sidebarFilters,
+                [name]: value,
+                showToday: false,
+            });
+        } else {
+            setSidebarFilters({ ...sidebarFilters, [name]: value });
         }
+    };
 
-        setSidebarFilters(newFilters);
+    // NEW: Updated toggleToday function to clear date range
+    const toggleToday = () => {
+        setSidebarFilters({
+            ...sidebarFilters,
+            showToday: !sidebarFilters.showToday,
+            dateRange: { start: "", end: "" }, // Clear date range when Today is toggled
+        });
     };
 
     const clearAllFilters = () => {
@@ -394,27 +470,19 @@ function App() {
             dateRange: { start: "", end: "" },
             searchText: "",
             showToday: false,
-            selectedMonth: "",
-            selectedYear: "",
         });
 
         setSortConfig({ key: null, direction: "asc" });
+        setSearchColumn("all");
     };
 
     // ============= SORTING =============
     const handleSort = (key) => {
         let direction = "asc";
-        if (sortConfig.key === key && sortConfig.direction === "asc")
+        if (sortConfig.key === key && sortConfig.direction === "asc") {
             direction = "desc";
+        }
         setSortConfig({ key, direction });
-
-        const handleSort = (key) => {
-            let direction = "asc";
-            if (sortConfig.key === key && sortConfig.direction === "asc") {
-                direction = "desc";
-            }
-            setSortConfig({ key, direction });
-        };
     };
 
     // ============= CRUD OPERATIONS =============
@@ -496,43 +564,75 @@ function App() {
 
     // ============= EXPORT =============
     const exportToCSV = () => {
-        /* Logic same as original */
-        const headers = [
-            "Date",
-            "JIRA ID",
-            "Description",
-            "Time",
-            "Status",
-            "Project",
-            "Remarks",
-        ];
-        const rows = filteredLogs.map((l) => [
-            formatDate(l.date),
-            l.jiraId,
-            `"${l.description}"`,
-            l.timeLogged,
-            l.status,
-            l.projectName,
-            `"${l.remarks}"`,
-        ]);
-        const csvContent = [
-            headers.join(","),
-            ...rows.map((r) => r.join(",")),
-        ].join("\n");
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(
-            new Blob([csvContent], { type: "text/csv" }),
-        );
-        link.download = "worklogs.csv";
-        link.click();
+        const dataToExport = isMerged ? mergedLogs : filteredLogs;
+
+        if (isMerged) {
+            const headers = [
+                "No.",
+                "JIRA ID",
+                "Description",
+                "Start Date",
+                "End Date",
+                "Total Time",
+                "Project",
+            ];
+            const rows = dataToExport.map((l) => [
+                l.no,
+                l.jiraId,
+                `"${l.description}"`,
+                formatDate(l.startDate),
+                formatDate(l.endDate),
+                l.totalTime,
+                l.projectName,
+            ]);
+            const csvContent = [
+                headers.join(","),
+                ...rows.map((r) => r.join(",")),
+            ].join("\n");
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(
+                new Blob([csvContent], { type: "text/csv" }),
+            );
+            link.download = "worklogs_merged.csv";
+            link.click();
+        } else {
+            const headers = [
+                "Date",
+                "JIRA ID",
+                "Description",
+                "Time",
+                "Status",
+                "Project",
+                "Remarks",
+            ];
+            const rows = dataToExport.map((l) => [
+                formatDate(l.date),
+                l.jiraId,
+                `"${l.description}"`,
+                l.timeLogged,
+                l.status,
+                l.projectName,
+                `"${l.remarks}"`,
+            ]);
+            const csvContent = [
+                headers.join(","),
+                ...rows.map((r) => r.join(",")),
+            ].join("\n");
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(
+                new Blob([csvContent], { type: "text/csv" }),
+            );
+            link.download = "worklogs.csv";
+            link.click();
+        }
     };
 
     const exportToXLSX = () => {
-        /* Logic same as original */
-        const ws = XLSX.utils.json_to_sheet(filteredLogs);
+        const dataToExport = isMerged ? mergedLogs : filteredLogs;
+        const ws = XLSX.utils.json_to_sheet(dataToExport);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Worklogs");
-        XLSX.writeFile(wb, "worklogs.xlsx");
+        XLSX.writeFile(wb, isMerged ? "worklogs_merged.xlsx" : "worklogs.xlsx");
     };
 
     // Helpers
@@ -546,28 +646,13 @@ function App() {
             : "N/A";
     const getTheme = () => THEMES[accentColor];
 
-    // Lists for dropdowns (Dynamic based on filtered data for cascading)
+    // Lists for dropdowns
     const getAvailableList = (key) =>
         [...new Set(filteredLogs.map((l) => l[key]).filter(Boolean))].sort();
 
-    const { start, end } = sidebarFilters.dateRange;
-
-    const availableYears =
-        start && end
-            ? getYearsBetween(
-                  new Date(start).getFullYear(),
-                  new Date(end).getFullYear(),
-              )
-            : [];
-
-    const availableMonths =
-        sidebarFilters.selectedYear && start && end
-            ? getMonthsForYear(
-                  parseInt(sidebarFilters.selectedYear),
-                  start,
-                  end,
-              )
-            : [];
+    // Get current columns based on merge state
+    const getCurrentColumns = () => (isMerged ? MERGED_COLUMNS : ALL_COLUMNS);
+    const getCurrentData = () => (isMerged ? mergedLogs : filteredLogs);
 
     // ============= RENDER =============
     return (
@@ -595,21 +680,37 @@ function App() {
 
                     {isSidebarOpen ? (
                         <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                            {/* Search */}
-                            <div className="relative">
-                                <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Global Search..."
-                                    value={sidebarFilters.searchText}
+                            {/* Search with Column Selector */}
+                            <div className="space-y-2">
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search..."
+                                        value={sidebarFilters.searchText}
+                                        onChange={(e) =>
+                                            updateFilter(
+                                                "searchText",
+                                                e.target.value,
+                                            )
+                                        }
+                                        className={`w-full pl-9 pr-4 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 ${isDarkMode ? "bg-slate-800 border-slate-700 text-white focus:ring-slate-600" : "bg-white border-gray-200 focus:ring-blue-100"}`}
+                                    />
+                                </div>
+
+                                {/* Search Column Selector */}
+                                <select
+                                    value={searchColumn}
                                     onChange={(e) =>
-                                        updateFilter(
-                                            "searchText",
-                                            e.target.value,
-                                        )
+                                        setSearchColumn(e.target.value)
                                     }
-                                    className={`w-full pl-9 pr-4 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 ${isDarkMode ? "bg-slate-800 border-slate-700 text-white focus:ring-slate-600" : "bg-white border-gray-200 focus:ring-blue-100"}`}
-                                />
+                                    className={`w-full px-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-2 ${isDarkMode ? "bg-slate-800 border-slate-700 text-white focus:ring-slate-600" : "bg-white border-gray-200 focus:ring-blue-100"}`}>
+                                    {SEARCH_COLUMNS.map((col) => (
+                                        <option key={col.key} value={col.key}>
+                                            Search in: {col.label}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
 
                             {/* Filters Section */}
@@ -627,7 +728,7 @@ function App() {
                                     onChange={(val) =>
                                         updateFilter("selectedProject", val)
                                     }
-                                    options={getAvailableList("projectName")} // Logic simplified: Use getAvailableList helper based on current filteredLogs implies cascade visual, though pure cascade logic is in updateFilter
+                                    options={getAvailableList("projectName")}
                                     theme={getTheme()}
                                     isDark={isDarkMode}
                                 />
@@ -663,198 +764,50 @@ function App() {
                                     isDark={isDarkMode}
                                 />
 
-                                {/* Date Range */}
+                                {/* Date Range (simplified - no month/year) */}
                                 <div
-                                    className={`rounded-lg border ${
+                                    className={`rounded-lg border p-3 ${
                                         isDarkMode
                                             ? "bg-slate-800/50 border-slate-700"
                                             : "bg-gray-50 border-gray-200"
                                     }`}>
-                                    {/* Header */}
-                                    <button
-                                        onClick={() =>
-                                            setIsDateOpen(!isDateOpen)
-                                        }
-                                        className="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold">
-                                        <span>Advanced Date Filter</span>
-                                        {isDateOpen ? (
-                                            <ChevronUp className="w-4 h-4" />
-                                        ) : (
-                                            <ChevronDown className="w-4 h-4" />
-                                        )}
-                                    </button>
-
-                                    {/* Body */}
-                                    {isDateOpen && (
-                                        <div className="p-3 space-y-3">
-                                            {/* Date Range */}
-                                            <div>
-                                                <label className="text-xs font-medium mb-1 block">
-                                                    Date Range
-                                                </label>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <input
-                                                        type="date"
-                                                        disabled={
-                                                            sidebarFilters.selectedMonth ||
-                                                            sidebarFilters.selectedYear
-                                                        }
-                                                        value={
-                                                            sidebarFilters
-                                                                .dateRange.start
-                                                        }
-                                                        onChange={(e) =>
-                                                            updateFilter(
-                                                                "dateRange",
-                                                                {
-                                                                    ...sidebarFilters.dateRange,
-                                                                    start: e
-                                                                        .target
-                                                                        .value,
-                                                                },
-                                                            )
-                                                        }
-                                                        className="text-xs p-1.5 rounded border"
-                                                    />
-
-                                                    <div className="relative">
-                                                        <input
-                                                            type="date"
-                                                            disabled={
-                                                                sidebarFilters.selectedMonth ||
-                                                                sidebarFilters.selectedYear
-                                                            }
-                                                            value={
-                                                                sidebarFilters
-                                                                    .dateRange
-                                                                    .end
-                                                            }
-                                                            onChange={(e) =>
-                                                                updateFilter(
-                                                                    "dateRange",
-                                                                    {
-                                                                        ...sidebarFilters.dateRange,
-                                                                        end: e
-                                                                            .target
-                                                                            .value,
-                                                                    },
-                                                                )
-                                                            }
-                                                            className="text-xs p-1.5 rounded border w-full"
-                                                        />
-                                                        <button
-                                                            onClick={() =>
-                                                                updateFilter(
-                                                                    "dateRange",
-                                                                    {
-                                                                        start: sidebarFilters
-                                                                            .dateRange
-                                                                            .start,
-                                                                        end: new Date()
-                                                                            .toISOString()
-                                                                            .split(
-                                                                                "T",
-                                                                            )[0],
-                                                                    },
-                                                                )
-                                                            }
-                                                            className="absolute right-1 top-1 text-[10px] text-blue-600">
-                                                            Go to Today
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Month / Year */}
-                                            <div>
-                                                <label className="text-xs font-medium mb-1 block">
-                                                    Month / Year (from Date
-                                                    Range)
-                                                </label>
-
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    {/* YEAR */}
-                                                    <select
-                                                        value={
-                                                            sidebarFilters.selectedYear
-                                                        }
-                                                        disabled={
-                                                            !start || !end
-                                                        }
-                                                        onChange={(e) =>
-                                                            updateFilter(
-                                                                "selectedYear",
-                                                                e.target.value,
-                                                            )
-                                                        }
-                                                        className="text-xs p-1.5 rounded border disabled:opacity-50">
-                                                        <option value="">
-                                                            Year
-                                                        </option>
-                                                        {availableYears.map(
-                                                            (y) => (
-                                                                <option
-                                                                    key={y}
-                                                                    value={y}>
-                                                                    {y}
-                                                                </option>
-                                                            ),
-                                                        )}
-                                                    </select>
-
-                                                    {/* MONTH */}
-                                                    <select
-                                                        value={
-                                                            sidebarFilters.selectedMonth
-                                                        }
-                                                        disabled={
-                                                            !sidebarFilters.selectedYear
-                                                        }
-                                                        onChange={(e) =>
-                                                            updateFilter(
-                                                                "selectedMonth",
-                                                                e.target.value,
-                                                            )
-                                                        }
-                                                        className="text-xs p-1.5 rounded border disabled:opacity-50">
-                                                        <option value="">
-                                                            Month
-                                                        </option>
-                                                        {availableMonths.map(
-                                                            (m) => (
-                                                                <option
-                                                                    key={m}
-                                                                    value={m}>
-                                                                    {new Date(
-                                                                        0,
-                                                                        m,
-                                                                    ).toLocaleString(
-                                                                        "en",
-                                                                        {
-                                                                            month: "short",
-                                                                        },
-                                                                    )}
-                                                                </option>
-                                                            ),
-                                                        )}
-                                                    </select>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
+                                    <label className="text-xs font-medium mb-2 block items-center gap-2">
+                                        <Calendar className="w-4 h-4" />
+                                        Date Range
+                                    </label>
+                                    <div className="space-y-2">
+                                        <input
+                                            type="date"
+                                            value={
+                                                sidebarFilters.dateRange.start
+                                            }
+                                            onChange={(e) =>
+                                                updateFilter("dateRange", {
+                                                    ...sidebarFilters.dateRange,
+                                                    start: e.target.value,
+                                                })
+                                            }
+                                            placeholder="From"
+                                            className={`w-full text-xs p-1.5 rounded border ${isDarkMode ? "bg-slate-900 border-slate-600" : "bg-white border-gray-300"}`}
+                                        />
+                                        <input
+                                            type="date"
+                                            value={sidebarFilters.dateRange.end}
+                                            onChange={(e) =>
+                                                updateFilter("dateRange", {
+                                                    ...sidebarFilters.dateRange,
+                                                    end: e.target.value,
+                                                })
+                                            }
+                                            placeholder="To"
+                                            className={`w-full text-xs p-1.5 rounded border ${isDarkMode ? "bg-slate-900 border-slate-600" : "bg-white border-gray-300"}`}
+                                        />
+                                    </div>
                                 </div>
 
+                                {/* Today Button */}
                                 <button
-                                    onClick={() =>
-                                        setSidebarFilters({
-                                            ...sidebarFilters,
-                                            showToday:
-                                                !sidebarFilters.showToday,
-                                            dateRange: { start: "", end: "" },
-                                            selectedMonth: "",
-                                            selectedYear: "",
-                                        })
-                                    }
+                                    onClick={toggleToday}
                                     className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium ${
                                         sidebarFilters.showToday
                                             ? "bg-blue-600 text-white"
@@ -862,7 +815,7 @@ function App() {
                                               ? "bg-slate-800 hover:bg-slate-700"
                                               : "bg-gray-100 hover:bg-gray-200"
                                     }`}>
-                                    <span>Today’s Worklogs</span>
+                                    <span>Today's Worklogs</span>
                                     <Calendar className="w-4 h-4" />
                                 </button>
 
@@ -893,7 +846,8 @@ function App() {
                         <h2 className="text-xl font-bold">Dashboard</h2>
                         <div
                             className={`text-xs px-2 py-1 rounded-full ${getTheme().light} ${getTheme().text} font-medium border ${getTheme().border}`}>
-                            {filteredLogs.length} Entries Found
+                            {getCurrentData().length} Entries{" "}
+                            {isMerged ? "(Merged)" : ""}
                         </div>
                     </div>
 
@@ -941,8 +895,8 @@ function App() {
                             bg="bg-emerald-50 dark:bg-emerald-900/20"
                         />
                         <StatCard
-                            title="Hours Logged"
-                            value="124h"
+                            title="Total Time"
+                            value={calculateTotalTime()}
                             icon={<Clock />}
                             color="text-amber-600"
                             bg="bg-amber-50 dark:bg-amber-900/20"
@@ -962,18 +916,51 @@ function App() {
                     {/* Action Bar */}
                     <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                         <div className="flex gap-2">
+                            {/* Merge/Unmerge Button */}
+                            <button
+                                onClick={() => {
+                                    setIsMerged(!isMerged);
+                                    setExpandedRows({}); // Reset expanded rows when toggling merge
+                                }}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium shadow-lg transition-all active:scale-95 ${
+                                    isMerged
+                                        ? "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20"
+                                        : `${getTheme().primary} ${getTheme().hover} text-white shadow-blue-500/20`
+                                }`}>
+                                {isMerged ? (
+                                    <>
+                                        <Split className="w-4 h-4" /> Unmerge
+                                    </>
+                                ) : (
+                                    <>
+                                        <Merge className="w-4 h-4" /> Merge
+                                    </>
+                                )}
+                            </button>
+
                             <button
                                 onClick={openAddModal}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 ${getTheme().primary} ${getTheme().hover}`}>
+                                disabled={isMerged}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 ${
+                                    isMerged
+                                        ? "bg-gray-400 cursor-not-allowed"
+                                        : `${getTheme().primary} ${getTheme().hover}`
+                                }`}>
                                 <Plus className="w-4 h-4" /> Add Entry
                             </button>
+
                             <label
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg cursor-pointer border transition-colors ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`}>
+                                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+                                    isMerged
+                                        ? "opacity-50 cursor-not-allowed"
+                                        : `cursor-pointer ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`
+                                }`}>
                                 <Upload className="w-4 h-4" /> Import CSV
                                 <input
                                     type="file"
                                     onChange={handleFileUpload}
                                     accept=".xlsx,.csv"
+                                    disabled={isMerged}
                                     className="hidden"
                                 />
                             </label>
@@ -1001,38 +988,21 @@ function App() {
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left">
                                 <thead
-                                    onContextMenu={(e) => {
-                                        e.preventDefault();
-                                        setColumnMenu({
-                                            open: true,
-                                            x: e.clientX,
-                                            y: e.clientY,
-                                        });
-                                    }}
                                     className={`text-xs uppercase font-semibold ${
                                         isDarkMode
                                             ? "bg-slate-950/50 text-slate-400"
                                             : "bg-gray-50 text-gray-500"
                                     }`}>
                                     <tr>
-                                        {ALL_COLUMNS.map((col) => {
-                                            if (
-                                                !visibleColumns.includes(
-                                                    col.key,
-                                                )
-                                            )
-                                                return null;
-
+                                        {isMerged && (
+                                            <th className="px-6 py-4 w-12"></th>
+                                        )}
+                                        {getCurrentColumns().map((col) => {
                                             if (col.sortable) {
                                                 return (
                                                     <SortableHeader
                                                         key={col.key}
-                                                        label={
-                                                            col.key ===
-                                                            "timeLogged"
-                                                                ? `Time (${calculateTotalTime()})`
-                                                                : col.label
-                                                        }
+                                                        label={col.label}
                                                         fKey={col.key}
                                                         sortConfig={sortConfig}
                                                         onSort={handleSort}
@@ -1048,16 +1018,18 @@ function App() {
                                                 </th>
                                             );
                                         })}
-                                        <th className="px-6 py-4 text-right">
-                                            Actions
-                                        </th>
+                                        {!isMerged && (
+                                            <th className="px-6 py-4 text-right">
+                                                Actions
+                                            </th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 dark:divide-slate-800">
-                                    {filteredLogs.length === 0 ? (
+                                    {getCurrentData().length === 0 ? (
                                         <tr>
                                             <td
-                                                colSpan="7"
+                                                colSpan={isMerged ? "8" : "8"}
                                                 className="px-6 py-12 text-center text-gray-500">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <AlertCircle className="w-8 h-8 opacity-20" />
@@ -1065,70 +1037,214 @@ function App() {
                                                 </div>
                                             </td>
                                         </tr>
+                                    ) : isMerged ? (
+                                        // MERGED VIEW WITH EXPANSION
+                                        <>
+                                            {mergedLogs.map((log) => (
+                                                <React.Fragment key={log.id}>
+                                                    {/* Main Merged Row */}
+                                                    <tr
+                                                        className={`group transition-colors cursor-pointer ${isDarkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}`}
+                                                        onClick={() =>
+                                                            toggleRowExpansion(
+                                                                log.id,
+                                                            )
+                                                        }>
+                                                        <td className="px-6 py-4">
+                                                            <button className="p-1 hover:bg-gray-200 dark:hover:bg-slate-700 rounded">
+                                                                {expandedRows[
+                                                                    log.id
+                                                                ] ? (
+                                                                    <ChevronDown className="w-4 h-4" />
+                                                                ) : (
+                                                                    <ChevronRight className="w-4 h-4" />
+                                                                )}
+                                                            </button>
+                                                        </td>
+                                                        <td className="px-6 py-4 font-medium">
+                                                            {log.no}
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
+                                                                {log.jiraId}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4 max-w-xs truncate">
+                                                            {log.description}
+                                                            {log.entryCount >
+                                                                1 && (
+                                                                <span className="ml-2 text-xs text-gray-500">
+                                                                    (
+                                                                    {
+                                                                        log.entryCount
+                                                                    }{" "}
+                                                                    entries)
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4 font-medium">
+                                                            {formatDate(
+                                                                log.startDate,
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4 font-medium">
+                                                            {formatDate(
+                                                                log.endDate,
+                                                            )}
+                                                        </td>
+                                                        <td className="px-6 py-4 font-mono text-xs font-bold">
+                                                            {log.totalTime}
+                                                        </td>
+                                                        <td className="px-6 py-4">
+                                                            {log.projectName}
+                                                        </td>
+                                                    </tr>
+
+                                                    {/* Expanded Details */}
+                                                    {expandedRows[log.id] && (
+                                                        <tr
+                                                            className={
+                                                                isDarkMode
+                                                                    ? "bg-slate-950/50"
+                                                                    : "bg-blue-50/30"
+                                                            }>
+                                                            <td
+                                                                colSpan="8"
+                                                                className="px-6 py-4">
+                                                                <div className="ml-8 space-y-2">
+                                                                    <div className="font-semibold text-xs uppercase text-gray-500 mb-3">
+                                                                        Merged
+                                                                        Entries
+                                                                        Detail:
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        {log.originalEntries.map(
+                                                                            (
+                                                                                entry,
+                                                                                idx,
+                                                                            ) => (
+                                                                                <div
+                                                                                    key={
+                                                                                        entry.id
+                                                                                    }
+                                                                                    className={`p-3 rounded-lg border text-sm ${isDarkMode ? "bg-slate-900 border-slate-700" : "bg-white border-gray-200"}`}>
+                                                                                    <div className="grid grid-cols-6 gap-4">
+                                                                                        <div>
+                                                                                            <span className="text-xs text-gray-500">
+                                                                                                Entry
+                                                                                                #
+                                                                                                {idx +
+                                                                                                    1}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <span className="text-xs text-gray-500">
+                                                                                                Date:
+                                                                                            </span>
+                                                                                            <div className="font-medium">
+                                                                                                {formatDate(
+                                                                                                    entry.date,
+                                                                                                )}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <span className="text-xs text-gray-500">
+                                                                                                Time:
+                                                                                            </span>
+                                                                                            <div className="font-mono text-xs">
+                                                                                                {
+                                                                                                    entry.timeLogged
+                                                                                                }
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div>
+                                                                                            <span className="text-xs text-gray-500">
+                                                                                                Status:
+                                                                                            </span>
+                                                                                            <div>
+                                                                                                <StatusBadge
+                                                                                                    status={
+                                                                                                        entry.status
+                                                                                                    }
+                                                                                                />
+                                                                                            </div>
+                                                                                        </div>
+                                                                                        <div className="col-span-2">
+                                                                                            <span className="text-xs text-gray-500">
+                                                                                                Remarks:
+                                                                                            </span>
+                                                                                            <div className="text-xs">
+                                                                                                {entry.remarks ||
+                                                                                                    "—"}
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            ),
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
+                                            ))}
+                                        </>
                                     ) : (
+                                        // NORMAL VIEW
                                         filteredLogs.map((log) => (
                                             <tr
                                                 key={log.id}
                                                 className={`group transition-colors ${isDarkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}`}>
-                                                {visibleColumns.includes(
-                                                    "date",
-                                                ) && (
-                                                    <td className="px-6 py-4 font-medium">
-                                                        {formatDate(log.date)}
-                                                    </td>
-                                                )}
-
-                                                {visibleColumns.includes(
-                                                    "jiraId",
-                                                ) && (
-                                                    <td className="px-6 py-4">
-                                                        <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
-                                                            {log.jiraId}
-                                                        </span>
-                                                    </td>
-                                                )}
-
-                                                {visibleColumns.includes(
-                                                    "description",
-                                                ) && (
-                                                    <td className="px-6 py-4 max-w-xs truncate">
-                                                        {log.description}
-                                                    </td>
-                                                )}
-
-                                                {visibleColumns.includes(
-                                                    "timeLogged",
-                                                ) && (
-                                                    <td className="px-6 py-4 font-mono text-xs">
-                                                        {log.timeLogged}
-                                                    </td>
-                                                )}
-
-                                                {visibleColumns.includes(
-                                                    "status",
-                                                ) && (
-                                                    <td className="px-6 py-4">
-                                                        <StatusBadge
-                                                            status={log.status}
-                                                        />
-                                                    </td>
-                                                )}
-
-                                                {visibleColumns.includes(
-                                                    "projectName",
-                                                ) && (
-                                                    <td className="px-6 py-4">
-                                                        {log.projectName}
-                                                    </td>
-                                                )}
-
-                                                {visibleColumns.includes(
-                                                    "remarks",
-                                                ) && (
-                                                    <td className="px-6 py-4 text-xs opacity-80">
-                                                        {log.remarks || "—"}
-                                                    </td>
-                                                )}
+                                                <td className="px-6 py-4 font-medium">
+                                                    {formatDate(log.date)}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
+                                                        {log.jiraId}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 max-w-xs truncate">
+                                                    {log.description}
+                                                </td>
+                                                <td className="px-6 py-4 font-mono text-xs">
+                                                    {log.timeLogged}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <StatusBadge
+                                                        status={log.status}
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {log.projectName}
+                                                </td>
+                                                <td className="px-6 py-4 text-xs opacity-80">
+                                                    {log.remarks || "—"}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() =>
+                                                                openEditModal(
+                                                                    log,
+                                                                )
+                                                            }
+                                                            className="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 transition-colors"
+                                                            title="Edit">
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() =>
+                                                                handleDelete(
+                                                                    log.id,
+                                                                )
+                                                            }
+                                                            className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors"
+                                                            title="Delete">
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))
                                     )}
@@ -1291,36 +1407,6 @@ function App() {
                             </div>
                         </form>
                     </div>
-                </div>
-            )}
-            {columnMenu.open && (
-                <div
-                    style={{ top: columnMenu.y, left: columnMenu.x }}
-                    className="fixed z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg shadow-xl p-3"
-                    onMouseLeave={() =>
-                        setColumnMenu({ ...columnMenu, open: false })
-                    }>
-                    <p className="text-xs font-semibold mb-2 opacity-60">
-                        Toggle Columns
-                    </p>
-                    {ALL_COLUMNS.map((c) => (
-                        <label
-                            key={c.key}
-                            className="flex items-center gap-2 text-sm cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={visibleColumns.includes(c.key)}
-                                onChange={() =>
-                                    setVisibleColumns((prev) =>
-                                        prev.includes(c.key)
-                                            ? prev.filter((x) => x !== c.key)
-                                            : [...prev, c.key],
-                                    )
-                                }
-                            />
-                            {c.label}
-                        </label>
-                    ))}
                 </div>
             )}
         </div>

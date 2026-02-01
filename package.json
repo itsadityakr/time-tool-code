@@ -1,0 +1,25 @@
+{
+    "name": "time-tool-code",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "dev": "concurrently \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\""
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/itsadityakr/time-tool-code.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "module",
+    "bugs": {
+        "url": "https://github.com/itsadityakr/time-tool-code/issues"
+    },
+    "homepage": "https://github.com/itsadityakr/time-tool-code#readme",
+    "devDependencies": {
+        "concurrently": "^9.2.1"
+    }
+}

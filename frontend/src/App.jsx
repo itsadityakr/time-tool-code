@@ -1,340 +1,202 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
 import {
     LayoutDashboard,
     Plus,
-    Upload,
     Download,
     Search,
     Moon,
     Sun,
-    Filter,
     X,
     Calendar,
     Clock,
-    CheckCircle2,
-    AlertCircle,
-    MoreVertical,
     Trash2,
     Edit2,
-    FileSpreadsheet,
     Menu,
     ChevronDown,
-    ChevronUp,
-    Briefcase,
-    Hash,
-    ListFilter,
     Merge,
     Split,
     ChevronRight,
+    Zap,
+    Activity,
+    Layers,
+    Briefcase,
+    AlertCircle,
+    Upload,
+    Eye,
+    EyeOff,
+    ExternalLink,
+    BarChart3,
+    PieChart,
+    TrendingUp,
+    Filter,
+    CalendarDays,
+    FolderKanban,
+    Timer,
+    Target,
+    Award,
 } from "lucide-react";
 
 // Base URL for API calls
 const API_URL = "http://localhost:5000/api";
 
-// Theme Configuration
-const THEMES = {
-    blue: {
-        primary: "bg-blue-600",
-        hover: "hover:bg-blue-700",
-        text: "text-blue-600",
-        ring: "ring-blue-500",
-        light: "bg-blue-50 dark:bg-blue-900/20",
-        border: "border-blue-200 dark:border-blue-800",
-    },
-    violet: {
-        primary: "bg-violet-600",
-        hover: "hover:bg-violet-700",
-        text: "text-violet-600",
-        ring: "ring-violet-500",
-        light: "bg-violet-50 dark:bg-violet-900/20",
-        border: "border-violet-200 dark:border-violet-800",
-    },
-    emerald: {
-        primary: "bg-emerald-600",
-        hover: "hover:bg-emerald-700",
-        text: "text-emerald-600",
-        ring: "ring-emerald-500",
-        light: "bg-emerald-50 dark:bg-emerald-900/20",
-        border: "border-emerald-200 dark:border-emerald-800",
-    },
-    rose: {
-        primary: "bg-rose-600",
-        hover: "hover:bg-rose-700",
-        text: "text-rose-600",
-        ring: "ring-rose-500",
-        light: "bg-rose-50 dark:bg-rose-900/20",
-        border: "border-rose-200 dark:border-rose-800",
-    },
-    amber: {
-        primary: "bg-amber-600",
-        hover: "hover:bg-amber-700",
-        text: "text-amber-600",
-        ring: "ring-amber-500",
-        light: "bg-amber-50 dark:bg-amber-900/20",
-        border: "border-amber-200 dark:border-amber-800",
-    },
+// ==========================================
+// 🎨 THEME CONFIG (RED & ORANGE)
+// ==========================================
+
+const THEME = {
+    gradient: "from-red-600 via-orange-500 to-amber-500",
+    glass: "bg-orange-500/10 border-orange-200/20",
+    text: "text-orange-400",
+    accent: "bg-orange-500",
 };
 
-// Column definitions for normal view
+// Column definitions
 const ALL_COLUMNS = [
-    { key: "date", label: "Date", sortable: true },
-    { key: "jiraId", label: "Jira ID", sortable: true },
-    { key: "description", label: "Description" },
-    { key: "timeLogged", label: "Time", sortable: true },
-    { key: "status", label: "Status", sortable: true },
-    { key: "projectName", label: "Project", sortable: true },
-    { key: "remarks", label: "Remarks" },
+    { key: "date", label: "Date", sortable: true, defaultVisible: true },
+    { key: "jiraId", label: "Jira ID", sortable: true, defaultVisible: true },
+    {
+        key: "description",
+        label: "Description",
+        sortable: false,
+        defaultVisible: true,
+    },
+    { key: "timeLogged", label: "Time", sortable: true, defaultVisible: true },
+    { key: "status", label: "Status", sortable: true, defaultVisible: true },
+    {
+        key: "projectName",
+        label: "Project",
+        sortable: true,
+        defaultVisible: true,
+    },
+    { key: "remarks", label: "Remarks", sortable: false, defaultVisible: true },
 ];
 
-// Column definitions for merged view
-const MERGED_COLUMNS = [
-    { key: "no", label: "No.", sortable: false },
-    { key: "jiraId", label: "JIRA ID", sortable: true },
-    { key: "description", label: "Description" },
-    { key: "startDate", label: "Start Date", sortable: true },
-    { key: "endDate", label: "End Date", sortable: true },
-    { key: "totalTime", label: "Total Time", sortable: true },
-    { key: "projectName", label: "Project", sortable: true },
-];
+// View modes
+const VIEW_MODES = {
+    DASHBOARD: "dashboard",
+    ANALYTICS: "analytics",
+    CALENDAR: "calendar",
+    PROJECTS: "projects",
+};
 
-// Search column options
-const SEARCH_COLUMNS = [
-    { key: "all", label: "All Columns" },
-    { key: "jiraId", label: "JIRA ID" },
-    { key: "description", label: "Description" },
-    { key: "projectName", label: "Project" },
-    { key: "status", label: "Status" },
-];
+// ==========================================
+// 🖱️ CUSTOM CURSOR COMPONENT
+// ==========================================
+const CursorFollower = () => {
+    const cursorRef = useRef(null);
+    const followerRef = useRef(null);
 
-function App() {
-    // ============= UI STATE =============
-    const [isDarkMode, setIsDarkMode] = useState(
-        () => localStorage.getItem("theme") === "dark",
+    useEffect(() => {
+        const moveCursor = (e) => {
+            if (cursorRef.current) {
+                cursorRef.current.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+            }
+            if (followerRef.current) {
+                setTimeout(() => {
+                    if (followerRef.current)
+                        followerRef.current.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`;
+                }, 80);
+            }
+        };
+
+        window.addEventListener("mousemove", moveCursor);
+        return () => window.removeEventListener("mousemove", moveCursor);
+    }, []);
+
+    return (
+        <>
+            <div
+                ref={cursorRef}
+                className="fixed top-0 left-0 w-3 h-3 bg-white rounded-full mix-blend-difference pointer-events-none z-[9999] -mt-1.5 -ml-1.5 transition-transform duration-75 ease-out will-change-transform hidden md:block"
+            />
+            <div
+                ref={followerRef}
+                className="fixed top-0 left-0 w-8 h-8 border border-white/50 rounded-full mix-blend-difference pointer-events-none z-[9998] -mt-4 -ml-4 transition-transform duration-300 ease-out will-change-transform hidden md:block"
+            />
+        </>
     );
-    const [columnWidths, setColumnWidths] = useState({
-        date: 140,
-        jiraId: 120,
-        description: 280,
-        timeLogged: 130,
-        status: 120,
-        projectName: 180,
-        remarks: 200,
-        startDate: 140,
-        endDate: 140,
-        totalTime: 140,
+};
+
+// ==========================================
+// ⚛️ MAIN APP COMPONENT
+// ==========================================
+export default function App() {
+    // State
+    const [worklogs, setWorklogs] = useState([]);
+    const [isDarkMode, setIsDarkMode] = useState(true);
+    const [isMerged, setIsMerged] = useState(false);
+    const [expandedRows, setExpandedRows] = useState({});
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [showColumnMenu, setShowColumnMenu] = useState(false);
+    const [currentView, setCurrentView] = useState(VIEW_MODES.DASHBOARD);
+    const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+
+    // Column visibility and widths
+    const [visibleColumns, setVisibleColumns] = useState(() => {
+        const saved = localStorage.getItem("visibleColumns");
+        return saved
+            ? JSON.parse(saved)
+            : ALL_COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key);
     });
 
-    const [accentColor, setAccentColor] = useState(
-        () => localStorage.getItem("accent") || "blue",
-    );
-    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [columnWidths, setColumnWidths] = useState(() => {
+        const saved = localStorage.getItem("columnWidths");
+        return saved
+            ? JSON.parse(saved)
+            : {
+                  date: 140,
+                  jiraId: 140,
+                  description: 300,
+                  timeLogged: 120,
+                  status: 130,
+                  projectName: 180,
+                  remarks: 200,
+              };
+    });
+
+    // Save column preferences
+    useEffect(() => {
+        localStorage.setItem("visibleColumns", JSON.stringify(visibleColumns));
+    }, [visibleColumns]);
+
+    useEffect(() => {
+        localStorage.setItem("columnWidths", JSON.stringify(columnWidths));
+    }, [columnWidths]);
+
+    // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState("add");
-    const [isMerged, setIsMerged] = useState(false);
-    const [expandedRows, setExpandedRows] = useState({}); // NEW: Track which merged rows are expanded
+    const [currentEntry, setCurrentEntry] = useState(null);
 
-    // ============= DATA STATE =============
-    const [worklogs, setWorklogs] = useState([]);
-    const [filteredLogs, setFilteredLogs] = useState([]);
-    const [mergedLogs, setMergedLogs] = useState([]);
+    // Filters - Enhanced with more options
+    const [filters, setFilters] = useState({
+        project: "",
+        status: "",
+        jiraId: "",
+        dateRange: { start: "", end: "" },
+        showToday: false,
+        showThisWeek: false,
+        showThisMonth: false,
+    });
+
+    // Stats
     const [stats, setStats] = useState({
         totalLogs: 0,
         projects: [],
         totalProjects: 0,
     });
 
-    const [visibleColumns, setVisibleColumns] = useState(() => {
-        const saved = localStorage.getItem("visibleColumns");
-        return saved ? JSON.parse(saved) : ALL_COLUMNS.map((c) => c.key);
-    });
-
-    const [columnMenu, setColumnMenu] = useState({
-        open: false,
-        x: 0,
-        y: 0,
-    });
-
-    useEffect(() => {
-        localStorage.setItem("visibleColumns", JSON.stringify(visibleColumns));
-    }, [visibleColumns]);
-
-    // Editing & Forms
-    const [editingId, setEditingId] = useState(null);
-    const [formData, setFormData] = useState({
-        date: "",
-        jiraId: "",
-        description: "",
-        timeLogged: "",
-        status: "",
-        projectName: "",
-        remarks: "",
-    });
-
-    // Filters
-    const [sortConfig, setSortConfig] = useState({
-        key: null,
-        direction: "asc",
-    });
-
-    const startResize = (e, key) => {
-        e.preventDefault();
-        const startX = e.clientX;
-        const startWidth = columnWidths[key];
-
-        const onMouseMove = (moveEvent) => {
-            const newWidth = startWidth + (moveEvent.clientX - startX);
-            setColumnWidths((prev) => ({
-                ...prev,
-                [key]: Math.max(80, newWidth),
-            }));
-        };
-
-        const onMouseUp = () => {
-            document.removeEventListener("mousemove", onMouseMove);
-            document.removeEventListener("mouseup", onMouseUp);
-        };
-
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", onMouseUp);
-    };
-
-    const [searchColumn, setSearchColumn] = useState("all");
-
-    const [sidebarFilters, setSidebarFilters] = useState({
-        selectedProject: null,
-        selectedStatus: null,
-        selectedJiraId: null,
-        selectedDate: null,
-        dateRange: { start: "", end: "" },
-        searchText: "",
-        showToday: false,
-    });
-
-    // Lists
-    const [projectList, setProjectList] = useState([]);
-    const [jiraIdList, setJiraIdList] = useState([]);
-
-    // Calculate total time for current view
-    const calculateTotalTime = () => {
-        let totalMinutes = 0;
-        const dataToUse = isMerged ? mergedLogs : filteredLogs;
-
-        dataToUse.forEach((l) => {
-            const timeField = isMerged ? l.totalTime : l.timeLogged;
-            if (!timeField) return;
-            const h = timeField.match(/(\d+)h/);
-            const m = timeField.match(/(\d+)m/);
-            if (h) totalMinutes += parseInt(h[1]) * 60;
-            if (m) totalMinutes += parseInt(m[1]);
-        });
-
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        return `${hours}h ${minutes}m`;
-    };
-
-    // ============= MERGE LOGIC =============
-    // This function combines entries with same JIRA ID + Project
-    const mergeWorklogs = (logs) => {
-        const grouped = {};
-
-        // Group logs by JIRA ID + Project Name
-        logs.forEach((log) => {
-            const key = `${log.jiraId}_${log.projectName}`;
-
-            if (!grouped[key]) {
-                grouped[key] = [];
-            }
-            grouped[key].push(log);
-        });
-
-        // Convert grouped data to merged format
-        const merged = Object.entries(grouped).map(([key, entries], index) => {
-            // Sort entries by date to get start and end dates
-            const sortedEntries = entries.sort(
-                (a, b) => new Date(a.date) - new Date(b.date),
-            );
-
-            // Calculate total time
-            let totalMinutes = 0;
-            entries.forEach((entry) => {
-                if (entry.timeLogged) {
-                    const h = entry.timeLogged.match(/(\d+)h/);
-                    const m = entry.timeLogged.match(/(\d+)m/);
-                    if (h) totalMinutes += parseInt(h[1]) * 60;
-                    if (m) totalMinutes += parseInt(m[1]);
-                }
-            });
-
-            const totalHours = Math.floor(totalMinutes / 60);
-            const totalMins = totalMinutes % 60;
-            const totalTime = `${totalHours}h ${totalMins}m`;
-
-            return {
-                id: key, // Unique identifier for this merged group
-                no: index + 1,
-                jiraId: sortedEntries[0].jiraId,
-                description: sortedEntries[0].description,
-                startDate: sortedEntries[0].date,
-                endDate: sortedEntries[sortedEntries.length - 1].date,
-                totalTime: totalTime,
-                projectName: sortedEntries[0].projectName,
-                entryCount: entries.length,
-                originalEntries: sortedEntries, // NEW: Store original entries for expansion
-            };
-        });
-
-        return merged;
-    };
-
-    // NEW: Toggle row expansion
-    const toggleRowExpansion = (rowId) => {
-        setExpandedRows((prev) => ({
-            ...prev,
-            [rowId]: !prev[rowId],
-        }));
-    };
-
-    // ============= EFFECTS =============
-    useEffect(() => {
-        applyAllFilters();
-    }, [worklogs, sidebarFilters, sortConfig, searchColumn]);
-
-    // Theme Effect
-    useEffect(() => {
-        const root = window.document.documentElement;
-        if (isDarkMode) {
-            root.classList.add("dark");
-            localStorage.setItem("theme", "dark");
-        } else {
-            root.classList.remove("dark");
-            localStorage.setItem("theme", "light");
-        }
-    }, [isDarkMode]);
-
-    // Color Persistence
-    useEffect(() => {
-        localStorage.setItem("accent", accentColor);
-    }, [accentColor]);
-
-    // Data Loading
+    // ==========================================
+    // 🔄 DATA FETCHING
+    // ==========================================
     useEffect(() => {
         fetchWorklogs();
         fetchStats();
-        loadProjectList();
-        loadJiraIdList();
     }, []);
 
-    // Update merged logs when filtered logs change
-    useEffect(() => {
-        if (isMerged) {
-            setMergedLogs(mergeWorklogs(filteredLogs));
-        }
-    }, [filteredLogs, isMerged]);
-
-    // ============= FETCH FUNCTIONS =============
     const fetchWorklogs = async () => {
         try {
             const response = await axios.get(`${API_URL}/worklogs`);
@@ -353,230 +215,309 @@ function App() {
         }
     };
 
-    // ============= LIST LOADERS =============
-    const loadProjectList = () => {
-        setProjectList([
-            "Standing Waves",
-            "Mobile App Development",
-            "Web Dashboard",
-            "API Integration",
-            "Database Migration",
-            "Bug Fixes",
-            "Testing",
-            "Documentation",
-            "Code Review",
-            "DevOps",
-            "UI/UX Design",
-        ]);
+    // ==========================================
+    // 🧠 LOGIC & UTILS
+    // ==========================================
+
+    // Format Helper
+    const formatDate = (d) =>
+        d
+            ? new Date(d).toLocaleDateString("en-GB", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+              })
+            : "N/A";
+
+    // Calculate Time String to Minutes
+    const parseTime = (timeStr) => {
+        if (!timeStr) return 0;
+        let total = 0;
+        const h = timeStr.match(/(\d+)h/);
+        const m = timeStr.match(/(\d+)m/);
+        if (h) total += parseInt(h[1]) * 60;
+        if (m) total += parseInt(m[1]);
+        return total;
     };
 
-    const loadJiraIdList = () => {
-        setJiraIdList([
-            "PROJ-101",
-            "PROJ-102",
-            "BUG-201",
-            "BUG-202",
-            "FEAT-301",
-            "TASK-401",
-            "DOC-501",
-            "TEST-601",
-        ]);
+    // Convert Minutes to Time String
+    const formatTime = (mins) => {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return `${h}h ${m > 0 ? `${m}m` : ""}`.trim();
     };
 
-    // ============= FILTER LOGIC =============
-    const getBaseFilteredLogs = () => {
-        let filtered = [...worklogs];
+    // Get date range helpers
+    const getToday = () => {
+        const today = new Date();
+        return today.toISOString().split("T")[0];
+    };
 
-        // 1️⃣ TODAY (highest priority)
-        if (sidebarFilters.showToday) {
-            const today = new Date().toISOString().split("T")[0];
-            return filtered.filter(
-                (l) => new Date(l.date).toISOString().split("T")[0] === today,
+    const getWeekStart = () => {
+        const today = new Date();
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(today.setDate(diff));
+        return monday.toISOString().split("T")[0];
+    };
+
+    const getMonthStart = () => {
+        const today = new Date();
+        return new Date(today.getFullYear(), today.getMonth(), 1)
+            .toISOString()
+            .split("T")[0];
+    };
+
+    // Merge Logic
+    const mergedData = useMemo(() => {
+        if (!isMerged) return [];
+        const grouped = {};
+
+        const sortedRaw = [...worklogs].sort(
+            (a, b) => new Date(a.date) - new Date(b.date),
+        );
+
+        sortedRaw.forEach((log) => {
+            const key = `${log.jiraId}_${log.projectName}`;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(log);
+        });
+
+        return Object.values(grouped).map((group, idx) => {
+            const totalMinutes = group.reduce(
+                (acc, curr) => acc + parseTime(curr.timeLogged),
+                0,
+            );
+            return {
+                id: `merged_${idx}`,
+                no: idx + 1,
+                jiraId: group[0].jiraId,
+                projectName: group[0].projectName,
+                description: group[0].description,
+                startDate: group[0].date,
+                endDate: group[group.length - 1].date,
+                totalTime: formatTime(totalMinutes),
+                entryCount: group.length,
+                originalEntries: group,
+            };
+        });
+    }, [worklogs, isMerged]);
+
+    // Filter Logic - Enhanced
+    const filteredData = useMemo(() => {
+        let data = isMerged ? mergedData : worklogs;
+
+        // Search filter
+        if (searchQuery) {
+            const lowerQ = searchQuery.toLowerCase();
+            data = data.filter((item) =>
+                Object.values(item).some((val) =>
+                    String(val).toLowerCase().includes(lowerQ),
+                ),
             );
         }
 
-        // 2️⃣ DATE RANGE (From – To)
-        if (sidebarFilters.dateRange.start && sidebarFilters.dateRange.end) {
-            const start = new Date(sidebarFilters.dateRange.start);
-            const end = new Date(sidebarFilters.dateRange.end);
-            filtered = filtered.filter((l) => {
-                const d = new Date(l.date);
-                return d >= start && d <= end;
+        // Project filter
+        if (filters.project) {
+            data = data.filter((item) => item.projectName === filters.project);
+        }
+
+        // Status filter
+        if (filters.status && !isMerged) {
+            data = data.filter((item) => item.status === filters.status);
+        }
+
+        // JIRA ID filter
+        if (filters.jiraId) {
+            data = data.filter((item) => item.jiraId === filters.jiraId);
+        }
+
+        // Date filters
+        if (filters.showToday) {
+            const today = getToday();
+            data = data.filter((item) => {
+                const itemDate = isMerged ? item.startDate : item.date;
+                return new Date(itemDate).toISOString().split("T")[0] === today;
+            });
+        } else if (filters.showThisWeek) {
+            const weekStart = getWeekStart();
+            data = data.filter((item) => {
+                const itemDate = isMerged ? item.startDate : item.date;
+                return new Date(itemDate) >= new Date(weekStart);
+            });
+        } else if (filters.showThisMonth) {
+            const monthStart = getMonthStart();
+            data = data.filter((item) => {
+                const itemDate = isMerged ? item.startDate : item.date;
+                return new Date(itemDate) >= new Date(monthStart);
             });
         }
 
-        // 3️⃣ OTHER FILTERS
-        if (sidebarFilters.selectedProject)
-            filtered = filtered.filter(
-                (l) => l.projectName === sidebarFilters.selectedProject,
-            );
+        // Custom date range
+        if (filters.dateRange.start) {
+            data = data.filter((item) => {
+                const date = isMerged ? item.startDate : item.date;
+                return new Date(date) >= new Date(filters.dateRange.start);
+            });
+        }
 
-        if (sidebarFilters.selectedStatus)
-            filtered = filtered.filter(
-                (l) => l.status === sidebarFilters.selectedStatus,
-            );
+        if (filters.dateRange.end) {
+            data = data.filter((item) => {
+                const date = isMerged ? item.endDate : item.date;
+                return new Date(date) <= new Date(filters.dateRange.end);
+            });
+        }
 
-        if (sidebarFilters.selectedJiraId)
-            filtered = filtered.filter(
-                (l) => l.jiraId === sidebarFilters.selectedJiraId,
-            );
+        return data;
+    }, [worklogs, mergedData, isMerged, searchQuery, filters]);
 
-        // 4️⃣ SEARCH TEXT (with column filter)
-        if (sidebarFilters.searchText) {
-            const lower = sidebarFilters.searchText.toLowerCase();
+    // Stats calculation for filtered data
+    const calculatedStats = useMemo(() => {
+        const totalMinutes = filteredData.reduce((acc, curr) => {
+            const time = isMerged ? curr.totalTime : curr.timeLogged;
+            return acc + parseTime(time);
+        }, 0);
 
-            if (searchColumn === "all") {
-                // Search in all columns
-                filtered = filtered.filter((l) =>
-                    Object.values(l).some((val) =>
-                        String(val).toLowerCase().includes(lower),
-                    ),
-                );
-            } else {
-                // Search in specific column
-                filtered = filtered.filter((l) =>
-                    String(l[searchColumn]).toLowerCase().includes(lower),
-                );
+        const uniqueProjects = new Set(filteredData.map((w) => w.projectName))
+            .size;
+        const uniqueJiraIds = new Set(filteredData.map((w) => w.jiraId)).size;
+
+        return {
+            totalTime: formatTime(totalMinutes),
+            totalMinutes: totalMinutes,
+            entries: filteredData.length,
+            projects: uniqueProjects,
+            tickets: uniqueJiraIds,
+        };
+    }, [filteredData, isMerged]);
+
+    // Analytics data
+    const analyticsData = useMemo(() => {
+        // Project-wise breakdown
+        const projectBreakdown = {};
+        filteredData.forEach((item) => {
+            const project = item.projectName;
+            const time = isMerged ? item.totalTime : item.timeLogged;
+            if (!projectBreakdown[project]) {
+                projectBreakdown[project] = {
+                    time: 0,
+                    entries: 0,
+                    tickets: new Set(),
+                };
             }
-        }
-
-        return filtered;
-    };
-
-    const applyAllFilters = () => {
-        let data = getBaseFilteredLogs();
-
-        if (sortConfig.key) {
-            data = [...data].sort((a, b) => {
-                let aVal = a[sortConfig.key];
-                let bVal = b[sortConfig.key];
-
-                if (
-                    sortConfig.key === "date" ||
-                    sortConfig.key === "startDate" ||
-                    sortConfig.key === "endDate"
-                ) {
-                    aVal = new Date(aVal);
-                    bVal = new Date(bVal);
-                }
-
-                if (typeof aVal === "string") {
-                    aVal = aVal.toLowerCase();
-                    bVal = bVal.toLowerCase();
-                }
-
-                if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
-                if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
-                return 0;
-            });
-        }
-
-        setFilteredLogs(data);
-    };
-
-    const updateFilter = (name, value) => {
-        // NEW: When date range changes, turn off Today's filter
-        if (name === "dateRange" && (value.start || value.end)) {
-            setSidebarFilters({
-                ...sidebarFilters,
-                [name]: value,
-                showToday: false,
-            });
-        } else {
-            setSidebarFilters({ ...sidebarFilters, [name]: value });
-        }
-    };
-
-    // NEW: Updated toggleToday function to clear date range
-    const toggleToday = () => {
-        setSidebarFilters({
-            ...sidebarFilters,
-            showToday: !sidebarFilters.showToday,
-            dateRange: { start: "", end: "" }, // Clear date range when Today is toggled
-        });
-    };
-
-    const clearAllFilters = () => {
-        setSidebarFilters({
-            selectedProject: null,
-            selectedStatus: null,
-            selectedJiraId: null,
-            selectedDate: null,
-            dateRange: { start: "", end: "" },
-            searchText: "",
-            showToday: false,
+            projectBreakdown[project].time += parseTime(time);
+            projectBreakdown[project].entries += isMerged ? item.entryCount : 1;
+            projectBreakdown[project].tickets.add(item.jiraId);
         });
 
-        setSortConfig({ key: null, direction: "asc" });
-        setSearchColumn("all");
-    };
+        // Status breakdown
+        const statusBreakdown = {};
+        const dataToUse = isMerged
+            ? filteredData.flatMap((item) => item.originalEntries)
+            : filteredData;
 
-    // ============= SORTING =============
-    const handleSort = (key) => {
-        let direction = "asc";
-        if (sortConfig.key === key && sortConfig.direction === "asc") {
-            direction = "desc";
-        }
-        setSortConfig({ key, direction });
-    };
-
-    // ============= CRUD OPERATIONS =============
-    const openAddModal = () => {
-        setModalMode("add");
-        setFormData({
-            date: "",
-            jiraId: "",
-            description: "",
-            timeLogged: "",
-            status: "",
-            projectName: "",
-            remarks: "",
+        dataToUse.forEach((item) => {
+            if (!statusBreakdown[item.status]) {
+                statusBreakdown[item.status] = { count: 0, time: 0 };
+            }
+            statusBreakdown[item.status].count++;
+            statusBreakdown[item.status].time += parseTime(item.timeLogged);
         });
-        setIsModalOpen(true);
-    };
 
-    const openEditModal = (log) => {
-        setModalMode("edit");
-        setEditingId(log.id);
-        setFormData({
-            date: log.date
-                ? new Date(log.date).toISOString().split("T")[0]
-                : "",
-            jiraId: log.jiraId || "",
-            description: log.description || "",
-            timeLogged: log.timeLogged || "",
-            status: log.status || "",
-            projectName: log.projectName || "",
-            remarks: log.remarks || "",
+        // Daily breakdown
+        const dailyBreakdown = {};
+        dataToUse.forEach((item) => {
+            const date = formatDate(item.date);
+            if (!dailyBreakdown[date]) {
+                dailyBreakdown[date] = 0;
+            }
+            dailyBreakdown[date] += parseTime(item.timeLogged);
         });
-        setIsModalOpen(true);
-    };
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+        return {
+            projectBreakdown: Object.entries(projectBreakdown)
+                .map(([name, data]) => ({
+                    name,
+                    time: data.time,
+                    formattedTime: formatTime(data.time),
+                    entries: data.entries,
+                    tickets: data.tickets.size,
+                    percentage:
+                        calculatedStats.totalMinutes > 0
+                            ? (
+                                  (data.time / calculatedStats.totalMinutes) *
+                                  100
+                              ).toFixed(1)
+                            : 0,
+                }))
+                .sort((a, b) => b.time - a.time),
+
+            statusBreakdown: Object.entries(statusBreakdown).map(
+                ([status, data]) => ({
+                    status,
+                    count: data.count,
+                    time: data.time,
+                    formattedTime: formatTime(data.time),
+                }),
+            ),
+
+            dailyBreakdown: Object.entries(dailyBreakdown)
+                .map(([date, time]) => ({
+                    date,
+                    time,
+                    formattedTime: formatTime(time),
+                }))
+                .sort((a, b) => new Date(b.date) - new Date(a.date))
+                .slice(0, 7),
+        };
+    }, [filteredData, calculatedStats, isMerged]);
+
+    // Calendar data
+    const calendarData = useMemo(() => {
+        const dataToUse = isMerged
+            ? filteredData.flatMap((item) => item.originalEntries)
+            : filteredData;
+
+        const grouped = {};
+        dataToUse.forEach((item) => {
+            const date = new Date(item.date).toISOString().split("T")[0];
+            if (!grouped[date]) {
+                grouped[date] = [];
+            }
+            grouped[date].push(item);
+        });
+
+        return grouped;
+    }, [filteredData, isMerged]);
+
+    // ==========================================
+    // 🔧 CRUD OPERATIONS
+    // ==========================================
+    const handleSave = async (entry) => {
         try {
             if (modalMode === "add") {
-                await axios.post(`${API_URL}/worklogs`, formData);
+                await axios.post(`${API_URL}/worklogs`, entry);
             } else {
-                await axios.put(`${API_URL}/worklogs/${editingId}`, formData);
+                await axios.put(`${API_URL}/worklogs/${entry.id}`, entry);
             }
             fetchWorklogs();
             fetchStats();
             setIsModalOpen(false);
         } catch (error) {
             console.error("Error saving worklog:", error);
-            alert("Operation failed");
+            alert("Failed to save worklog");
         }
     };
 
     const handleDelete = async (id) => {
-        if (!window.confirm("Delete this entry?")) return;
-        try {
-            await axios.delete(`${API_URL}/worklogs/${id}`);
-            fetchWorklogs();
-            fetchStats();
-        } catch (error) {
-            console.error("Delete failed", error);
+        if (confirm("Are you sure you want to delete this entry?")) {
+            try {
+                await axios.delete(`${API_URL}/worklogs/${id}`);
+                fetchWorklogs();
+                fetchStats();
+            } catch (error) {
+                console.error("Error deleting worklog:", error);
+            }
         }
     };
 
@@ -597,916 +538,363 @@ function App() {
         }
     };
 
-    // ============= EXPORT =============
+    // ==========================================
+    // 📊 EXPORT FUNCTIONS
+    // ==========================================
     const exportToCSV = () => {
-        const dataToExport = isMerged ? mergedLogs : filteredLogs;
+        const dataToExport = isMerged ? mergedData : filteredData;
 
         if (isMerged) {
             const headers = [
                 "No.",
                 "JIRA ID",
+                "Project",
                 "Description",
                 "Start Date",
                 "End Date",
                 "Total Time",
-                "Project",
+                "Entries",
             ];
-            const rows = dataToExport.map((l) => [
-                l.no,
-                l.jiraId,
-                `"${l.description}"`,
-                formatDate(l.startDate),
-                formatDate(l.endDate),
-                l.totalTime,
-                l.projectName,
+            const rows = dataToExport.map((item) => [
+                item.no,
+                item.jiraId,
+                item.projectName,
+                `"${item.description.replace(/"/g, '""')}"`,
+                formatDate(item.startDate),
+                formatDate(item.endDate),
+                item.totalTime,
+                item.entryCount,
             ]);
             const csvContent = [
                 headers.join(","),
                 ...rows.map((r) => r.join(",")),
             ].join("\n");
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(
-                new Blob([csvContent], { type: "text/csv" }),
-            );
-            link.download = "worklogs_merged.csv";
-            link.click();
+            downloadFile(csvContent, "text/csv", "WorkLogs_Merged.csv");
         } else {
             const headers = [
                 "Date",
                 "JIRA ID",
+                "Project",
                 "Description",
                 "Time",
                 "Status",
-                "Project",
                 "Remarks",
             ];
-            const rows = dataToExport.map((l) => [
-                formatDate(l.date),
-                l.jiraId,
-                `"${l.description}"`,
-                l.timeLogged,
-                l.status,
-                l.projectName,
-                `"${l.remarks}"`,
+            const rows = dataToExport.map((item) => [
+                formatDate(item.date),
+                item.jiraId,
+                item.projectName,
+                `"${item.description.replace(/"/g, '""')}"`,
+                item.timeLogged,
+                item.status,
+                `"${(item.remarks || "").replace(/"/g, '""')}"`,
             ]);
             const csvContent = [
                 headers.join(","),
                 ...rows.map((r) => r.join(",")),
             ].join("\n");
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(
-                new Blob([csvContent], { type: "text/csv" }),
-            );
-            link.download = "worklogs.csv";
-            link.click();
+            downloadFile(csvContent, "text/csv", "WorkLogs.csv");
         }
     };
 
     const exportToXLSX = () => {
-        const dataToExport = isMerged ? mergedLogs : filteredLogs;
-        const ws = XLSX.utils.json_to_sheet(dataToExport);
+        const dataToExport = isMerged ? mergedData : filteredData;
+
+        const worksheetData = dataToExport.map((item) => {
+            if (isMerged) {
+                return {
+                    "No.": item.no,
+                    "JIRA ID": item.jiraId,
+                    Project: item.projectName,
+                    Description: item.description,
+                    "Start Date": formatDate(item.startDate),
+                    "End Date": formatDate(item.endDate),
+                    "Total Time": item.totalTime,
+                    Entries: item.entryCount,
+                };
+            } else {
+                return {
+                    Date: formatDate(item.date),
+                    "JIRA ID": item.jiraId,
+                    Project: item.projectName,
+                    Description: item.description,
+                    Time: item.timeLogged,
+                    Status: item.status,
+                    Remarks: item.remarks || "",
+                };
+            }
+        });
+
+        const ws = XLSX.utils.json_to_sheet(worksheetData);
+
+        dataToExport.forEach((item, index) => {
+            const cellRef = `B${index + 2}`;
+            const jiraUrl = `https://www.jira.com/${item.jiraId}`;
+
+            if (!ws[cellRef]) ws[cellRef] = {};
+            ws[cellRef].l = {
+                Target: jiraUrl,
+                Tooltip: `Open ${item.jiraId} in JIRA`,
+            };
+        });
+
+        ws["!cols"] = [
+            { wch: 12 },
+            { wch: 15 },
+            { wch: 20 },
+            { wch: 40 },
+            { wch: 12 },
+            { wch: 12 },
+            { wch: 30 },
+        ];
+
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Worklogs");
-        XLSX.writeFile(wb, isMerged ? "worklogs_merged.xlsx" : "worklogs.xlsx");
+        XLSX.writeFile(wb, isMerged ? "WorkLogs_Merged.xlsx" : "WorkLogs.xlsx");
     };
 
-    // Helpers
-    const formatDate = (d) =>
-        d
-            ? new Date(d).toLocaleDateString("en-GB", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-              })
-            : "N/A";
-    const getTheme = () => THEMES[accentColor];
+    const downloadFile = (content, type, filename) => {
+        const blob = new Blob([content], { type: `${type};charset=utf-8;` });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        link.style.visibility = "hidden";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
-    // Lists for dropdowns
-    const getAvailableList = (key) =>
-        [...new Set(filteredLogs.map((l) => l[key]).filter(Boolean))].sort();
+    // ==========================================
+    // 📏 COLUMN RESIZING
+    // ==========================================
+    const startResize = (e, columnKey) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = columnWidths[columnKey];
 
-    // Get current columns based on merge state
-    const getCurrentColumns = () => (isMerged ? MERGED_COLUMNS : ALL_COLUMNS);
-    const getCurrentData = () => (isMerged ? mergedLogs : filteredLogs);
+        const onMouseMove = (moveEvent) => {
+            const newWidth = startWidth + (moveEvent.clientX - startX);
+            setColumnWidths((prev) => ({
+                ...prev,
+                [columnKey]: Math.max(80, newWidth),
+            }));
+        };
 
-    // ============= RENDER =============
+        const onMouseUp = () => {
+            document.removeEventListener("mousemove", onMouseMove);
+            document.removeEventListener("mouseup", onMouseUp);
+        };
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+    };
+
+    const toggleColumnVisibility = (columnKey) => {
+        setVisibleColumns((prev) => {
+            if (prev.includes(columnKey)) {
+                return prev.filter((k) => k !== columnKey);
+            } else {
+                return [...prev, columnKey];
+            }
+        });
+    };
+
+    const getJiraUrl = (jiraId) => {
+        return `https://www.jira.com/${jiraId}`;
+    };
+
+    const getVisibleColumns = () => {
+        return ALL_COLUMNS.filter((col) => visibleColumns.includes(col.key));
+    };
+
+    // Filter helpers
+    const clearAllFilters = () => {
+        setFilters({
+            project: "",
+            status: "",
+            jiraId: "",
+            dateRange: { start: "", end: "" },
+            showToday: false,
+            showThisWeek: false,
+            showThisMonth: false,
+        });
+    };
+
+    const setQuickFilter = (type) => {
+        setFilters((prev) => ({
+            ...prev,
+            showToday: type === "today",
+            showThisWeek: type === "week",
+            showThisMonth: type === "month",
+            dateRange: { start: "", end: "" },
+        }));
+    };
+
+    // Get unique values for filters
+    const getUniqueJiraIds = () => {
+        return [...new Set(worklogs.map((w) => w.jiraId))].sort();
+    };
+
+    // ==========================================
+    // 🖼️ RENDER
+    // ==========================================
     return (
         <div
-            className={`min-h-screen transition-colors duration-300 ${isDarkMode ? "bg-slate-950 text-slate-100" : "bg-gray-50 text-gray-900"} font-sans`}>
-            {/* ============= SIDEBAR ============= */}
-            <aside
-                className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 border-r ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"} ${isSidebarOpen ? "w-72" : "w-20"}`}>
-                {/* Logo */}
-                <div className="h-16 flex items-center justify-center border-b border-gray-200 dark:border-slate-800">
-                    <div
-                        className={`flex items-center gap-2 font-bold text-xl ${getTheme().text}`}>
-                        <LayoutDashboard className="w-8 h-8" />
-                        {isSidebarOpen && <span>WorkLog Pro</span>}
-                    </div>
-                </div>
+            className={`min-h-screen font-sans selection:bg-orange-500/30 selection:text-white transition-colors duration-500 ${isDarkMode ? "bg-[#0a0a0a] text-white" : "bg-orange-50/50 text-gray-900"}`}>
+            <CursorFollower />
 
-                {/* Filter Controls */}
-                <div className="p-4 overflow-y-auto h-[calc(100vh-4rem)] scrollbar-hide">
-                    <button
-                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className={`mb-6 w-full flex items-center justify-center p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-slate-800" : "hover:bg-gray-100"}`}>
-                        <Menu className="w-5 h-5" />
-                    </button>
-
-                    {isSidebarOpen ? (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                            {/* Search with Column Selector */}
-                            <div className="space-y-2">
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        placeholder="Search..."
-                                        value={sidebarFilters.searchText}
-                                        onChange={(e) =>
-                                            updateFilter(
-                                                "searchText",
-                                                e.target.value,
-                                            )
-                                        }
-                                        className={`w-full pl-9 pr-4 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 ${isDarkMode ? "bg-slate-800 border-slate-700 text-white focus:ring-slate-600" : "bg-white border-gray-200 focus:ring-blue-100"}`}
-                                    />
-                                </div>
-
-                                {/* Search Column Selector */}
-                                <select
-                                    value={searchColumn}
-                                    onChange={(e) =>
-                                        setSearchColumn(e.target.value)
-                                    }
-                                    className={`w-full px-3 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-2 ${isDarkMode ? "bg-slate-800 border-slate-700 text-white focus:ring-slate-600" : "bg-white border-gray-200 focus:ring-blue-100"}`}>
-                                    {SEARCH_COLUMNS.map((col) => (
-                                        <option key={col.key} value={col.key}>
-                                            Search in: {col.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Filters Section */}
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between text-xs font-semibold uppercase text-gray-500 tracking-wider">
-                                    <span>Smart Filters</span>
-                                    <Filter className="w-3 h-3" />
-                                </div>
-
-                                {/* Project Filter */}
-                                <FilterDropdown
-                                    label="Project"
-                                    icon={<Briefcase className="w-4 h-4" />}
-                                    value={sidebarFilters.selectedProject}
-                                    onChange={(val) =>
-                                        updateFilter("selectedProject", val)
-                                    }
-                                    options={getAvailableList("projectName")}
-                                    theme={getTheme()}
-                                    isDark={isDarkMode}
-                                />
-
-                                {/* Status Filter */}
-                                <FilterDropdown
-                                    label="Status"
-                                    icon={<CheckCircle2 className="w-4 h-4" />}
-                                    value={sidebarFilters.selectedStatus}
-                                    onChange={(val) =>
-                                        updateFilter("selectedStatus", val)
-                                    }
-                                    options={[
-                                        "Done",
-                                        "In Progress",
-                                        "Pending",
-                                        "Blocked",
-                                    ]}
-                                    theme={getTheme()}
-                                    isDark={isDarkMode}
-                                />
-
-                                {/* Jira Filter */}
-                                <FilterDropdown
-                                    label="Jira ID"
-                                    icon={<Hash className="w-4 h-4" />}
-                                    value={sidebarFilters.selectedJiraId}
-                                    onChange={(val) =>
-                                        updateFilter("selectedJiraId", val)
-                                    }
-                                    options={getAvailableList("jiraId")}
-                                    theme={getTheme()}
-                                    isDark={isDarkMode}
-                                />
-
-                                {/* Date Range (simplified - no month/year) */}
-                                <div
-                                    className={`rounded-lg border p-3 ${
-                                        isDarkMode
-                                            ? "bg-slate-800/50 border-slate-700"
-                                            : "bg-gray-50 border-gray-200"
-                                    }`}>
-                                    <label className="text-xs font-medium mb-2 block items-center gap-2">
-                                        <Calendar className="w-4 h-4" />
-                                        Date Range
-                                    </label>
-                                    <div className="space-y-2">
-                                        <input
-                                            type="date"
-                                            value={
-                                                sidebarFilters.dateRange.start
-                                            }
-                                            onChange={(e) =>
-                                                updateFilter("dateRange", {
-                                                    ...sidebarFilters.dateRange,
-                                                    start: e.target.value,
-                                                })
-                                            }
-                                            placeholder="From"
-                                            className={`w-full text-xs p-1.5 rounded border ${isDarkMode ? "bg-slate-900 border-slate-600" : "bg-white border-gray-300"}`}
-                                        />
-                                        <input
-                                            type="date"
-                                            value={sidebarFilters.dateRange.end}
-                                            onChange={(e) =>
-                                                updateFilter("dateRange", {
-                                                    ...sidebarFilters.dateRange,
-                                                    end: e.target.value,
-                                                })
-                                            }
-                                            placeholder="To"
-                                            className={`w-full text-xs p-1.5 rounded border ${isDarkMode ? "bg-slate-900 border-slate-600" : "bg-white border-gray-300"}`}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Today Button */}
-                                <button
-                                    onClick={toggleToday}
-                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium ${
-                                        sidebarFilters.showToday
-                                            ? "bg-blue-600 text-white"
-                                            : isDarkMode
-                                              ? "bg-slate-800 hover:bg-slate-700"
-                                              : "bg-gray-100 hover:bg-gray-200"
-                                    }`}>
-                                    <span>Today's Worklogs</span>
-                                    <Calendar className="w-4 h-4" />
-                                </button>
-
-                                <button
-                                    onClick={clearAllFilters}
-                                    className={`w-full py-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors`}>
-                                    Reset Filters
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center gap-4">
-                            <Search className="w-5 h-5 text-gray-400" />
-                            <Briefcase className="w-5 h-5 text-gray-400" />
-                            <CheckCircle2 className="w-5 h-5 text-gray-400" />
-                        </div>
-                    )}
-                </div>
-            </aside>
-
-            {/* ============= MAIN CONTENT ============= */}
-            <div
-                className={`transition-all duration-300 ${isSidebarOpen ? "ml-72" : "ml-20"}`}>
-                {/* Header */}
-                <header
-                    className={`z-30 h-16 px-8 flex items-center justify-between backdrop-blur-md border-b ${isDarkMode ? "bg-slate-950/80 border-slate-800" : "bg-white/80 border-gray-200"}`}>
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold">Dashboard</h2>
-                        <div
-                            className={`text-xs px-2 py-1 rounded-full ${getTheme().light} ${getTheme().text} font-medium border ${getTheme().border}`}>
-                            {getCurrentData().length} Entries{" "}
-                            {isMerged ? "(Merged)" : ""}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                        {/* Color Picker */}
-                        <div className="flex items-center gap-1 p-1 rounded-full border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-                            {Object.keys(THEMES).map((color) => (
-                                <button
-                                    key={color}
-                                    onClick={() => setAccentColor(color)}
-                                    className={`w-4 h-4 rounded-full transition-transform hover:scale-110 ${THEMES[color].primary} ${accentColor === color ? "ring-2 ring-offset-1 ring-offset-white dark:ring-offset-slate-950 " + THEMES[color].ring : ""}`}
-                                />
-                            ))}
-                        </div>
-
-                        {/* Theme Toggle */}
-                        <button
-                            onClick={() => setIsDarkMode(!isDarkMode)}
-                            className={`p-2 rounded-full transition-colors ${isDarkMode ? "hover:bg-slate-800 text-yellow-400" : "hover:bg-gray-100 text-slate-600"}`}>
-                            {isDarkMode ? (
-                                <Sun className="w-5 h-5" />
-                            ) : (
-                                <Moon className="w-5 h-5" />
-                            )}
-                        </button>
-                    </div>
-                </header>
-
-                {/* Content Area */}
-                <main className="p-8">
-                    {/* Action Bar */}
-                    <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                        <div className="flex gap-2">
-                            {/* Merge/Unmerge Button */}
-                            <button
-                                onClick={() => {
-                                    setIsMerged(!isMerged);
-                                    setExpandedRows({}); // Reset expanded rows when toggling merge
-                                }}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium shadow-lg transition-all active:scale-95 ${
-                                    isMerged
-                                        ? "bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20"
-                                        : `${getTheme().primary} ${getTheme().hover} text-white shadow-blue-500/20`
-                                }`}>
-                                {isMerged ? (
-                                    <>
-                                        <Split className="w-4 h-4" /> Unmerge
-                                    </>
-                                ) : (
-                                    <>
-                                        <Merge className="w-4 h-4" /> Merge
-                                    </>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={openAddModal}
-                                disabled={isMerged}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium shadow-lg shadow-blue-500/20 transition-all active:scale-95 ${
-                                    isMerged
-                                        ? "bg-gray-400 cursor-not-allowed"
-                                        : `${getTheme().primary} ${getTheme().hover}`
-                                }`}>
-                                <Plus className="w-4 h-4" /> Add Entry
-                            </button>
-
-                            <label
-                                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
-                                    isMerged
-                                        ? "opacity-50 cursor-not-allowed"
-                                        : `cursor-pointer ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`
-                                }`}>
-                                <Upload className="w-4 h-4" /> Import CSV
-                                <input
-                                    type="file"
-                                    onChange={handleFileUpload}
-                                    accept=".xlsx,.csv"
-                                    disabled={isMerged}
-                                    className="hidden"
-                                />
-                            </label>
-                        </div>
-
-                        <div className="flex gap-2">
-                            <button
-                                onClick={exportToCSV}
-                                className={`p-2 rounded-lg border transition-colors ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`}
-                                title="Export CSV">
-                                <Download className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={exportToXLSX}
-                                className={`p-2 rounded-lg border transition-colors ${isDarkMode ? "border-slate-700 hover:bg-slate-800" : "border-gray-300 hover:bg-gray-50"}`}
-                                title="Export Excel">
-                                <FileSpreadsheet className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Data Table */}
-                    <div
-                        className={`rounded-xl border shadow-sm ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-gray-200"}`}>
-                        <div className="overflow-x-auto">
-                            <table
-                                className="text-sm text-left table-fixed"
-                                style={{
-                                    minWidth:
-                                        Object.values(columnWidths).reduce(
-                                            (a, b) => a + b,
-                                            0,
-                                        ) + 120,
-                                }}>
-                                <thead
-                                    className={`sticky top-0 z-999 text-xs uppercase font-semibold ${
-                                        isDarkMode
-                                            ? "bg-slate-950 text-slate-400"
-                                            : "bg-gray-50 text-gray-500"
-                                    }`}>
-                                    <tr>
-                                        {isMerged && (
-                                            <th className="px-6 py-4 w-12"></th>
-                                        )}
-                                        {getCurrentColumns().map((col) => {
-                                            // 🔹 TIME COLUMN WITH TOTAL
-                                            if (col.key === "timeLogged") {
-                                                return (
-                                                    <th
-                                                        key={col.key}
-                                                        style={{
-                                                            width: columnWidths[
-                                                                col.key
-                                                            ],
-                                                        }}
-                                                        className="relative px-6 py-4 select-none">
-                                                        <div className="flex justify-between items-center">
-                                                            <span>
-                                                                Time
-                                                                <span className="ml-1 text-xs text-gray-400">
-                                                                    [
-                                                                    {calculateTotalTime()}
-                                                                    ]
-                                                                </span>
-                                                            </span>
-
-                                                            <div
-                                                                onMouseDown={(
-                                                                    e,
-                                                                ) =>
-                                                                    startResize(
-                                                                        e,
-                                                                        col.key,
-                                                                    )
-                                                                }
-                                                                className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-500"
-                                                            />
-                                                        </div>
-                                                    </th>
-                                                );
-                                            }
-
-                                            // 🔹 SORTABLE COLUMNS
-                                            if (col.sortable) {
-                                                return (
-                                                    <SortableHeader
-                                                        key={col.key}
-                                                        label={col.label}
-                                                        fKey={col.key}
-                                                        sortConfig={sortConfig}
-                                                        onSort={handleSort}
-                                                        width={
-                                                            columnWidths[
-                                                                col.key
-                                                            ]
-                                                        }
-                                                        onResize={startResize}
-                                                    />
-                                                );
-                                            }
-
-                                            // 🔹 NORMAL RESIZABLE COLUMNS
-                                            return (
-                                                <th
-                                                    key={col.key}
-                                                    style={{
-                                                        width: columnWidths[
-                                                            col.key
-                                                        ],
-                                                    }}
-                                                    className="relative px-6 py-4 select-none">
-                                                    <div className="flex justify-between items-center">
-                                                        {col.label}
-                                                        <div
-                                                            onMouseDown={(e) =>
-                                                                startResize(
-                                                                    e,
-                                                                    col.key,
-                                                                )
-                                                            }
-                                                            className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-500"
-                                                        />
-                                                    </div>
-                                                </th>
-                                            );
-                                        })}
-
-                                        {!isMerged && (
-                                            <th className="px-6 py-4 text-right">
-                                                Actions
-                                            </th>
-                                        )}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-200 dark:divide-slate-800">
-                                    {getCurrentData().length === 0 ? (
-                                        <tr>
-                                            <td
-                                                colSpan={isMerged ? "8" : "8"}
-                                                className="px-6 py-12 text-center text-gray-500">
-                                                <div className="flex flex-col items-center justify-center gap-2">
-                                                    <AlertCircle className="w-8 h-8 opacity-20" />
-                                                    <p>No records found</p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : isMerged ? (
-                                        // MERGED VIEW WITH EXPANSION
-                                        <>
-                                            {mergedLogs.map((log) => (
-                                                <React.Fragment key={log.id}>
-                                                    {/* Main Merged Row */}
-                                                    <tr
-                                                        className={`group transition-colors cursor-pointer ${isDarkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}`}
-                                                        onClick={() =>
-                                                            toggleRowExpansion(
-                                                                log.id,
-                                                            )
-                                                        }>
-                                                        <td className="px-6 py-4">
-                                                            <button className="p-1 hover:bg-gray-200 dark:hover:bg-slate-700 rounded">
-                                                                {expandedRows[
-                                                                    log.id
-                                                                ] ? (
-                                                                    <ChevronDown className="w-4 h-4" />
-                                                                ) : (
-                                                                    <ChevronRight className="w-4 h-4" />
-                                                                )}
-                                                            </button>
-                                                        </td>
-                                                        <td
-                                                            className="px-6 py-4 font-medium"
-                                                            style={{
-                                                                width: columnWidths.no,
-                                                            }}>
-                                                            {log.no}
-                                                        </td>
-                                                        <td
-                                                            className="px-6 py-4"
-                                                            style={{
-                                                                width: columnWidths.jiraId,
-                                                            }}>
-                                                            <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
-                                                                {log.jiraId}
-                                                            </span>
-                                                        </td>
-                                                        <td
-                                                            className="px-6 py-4 max-w-xs truncate"
-                                                            style={{
-                                                                width: columnWidths.description,
-                                                            }}>
-                                                            <Tooltip
-                                                                text={
-                                                                    log.description
-                                                                }>
-                                                                <span className="block truncate">
-                                                                    {
-                                                                        log.description
-                                                                    }
-                                                                </span>
-                                                            </Tooltip>
-                                                            {log.entryCount >
-                                                                1 && (
-                                                                <span className="ml-2 text-xs text-gray-500">
-                                                                    (
-                                                                    {
-                                                                        log.entryCount
-                                                                    }{" "}
-                                                                    entries)
-                                                                </span>
-                                                            )}
-                                                        </td>
-
-                                                        <td
-                                                            className="px-6 py-4 font-medium"
-                                                            style={{
-                                                                width: columnWidths.startDate,
-                                                            }}>
-                                                            {formatDate(
-                                                                log.startDate,
-                                                            )}
-                                                        </td>
-                                                        <td
-                                                            className="px-6 py-4 font-medium"
-                                                            style={{
-                                                                width: columnWidths.endDate,
-                                                            }}>
-                                                            {formatDate(
-                                                                log.endDate,
-                                                            )}
-                                                        </td>
-                                                        <td
-                                                            className="px-6 py-4 font-mono text-xs font-bold"
-                                                            style={{
-                                                                width: columnWidths.totalTime,
-                                                            }}>
-                                                            Time [
-                                                            {log.totalTime}]
-                                                        </td>
-
-                                                        <td
-                                                            className="px-6 py-4"
-                                                            style={{
-                                                                width: columnWidths.projectName,
-                                                            }}>
-                                                            <Tooltip
-                                                                text={
-                                                                    log.projectName
-                                                                }>
-                                                                <span className="block truncate">
-                                                                    {
-                                                                        log.projectName
-                                                                    }
-                                                                </span>
-                                                            </Tooltip>
-                                                        </td>
-                                                    </tr>
-
-                                                    {/* Expanded Details */}
-                                                    {expandedRows[log.id] && (
-                                                        <tr
-                                                            className={
-                                                                isDarkMode
-                                                                    ? "bg-slate-950/50"
-                                                                    : "bg-blue-50/30"
-                                                            }>
-                                                            <td
-                                                                colSpan="8"
-                                                                className="px-6 py-4">
-                                                                <div className="ml-8 space-y-2">
-                                                                    <div className="font-semibold text-xs uppercase text-gray-500 mb-3">
-                                                                        Merged
-                                                                        Entries
-                                                                        Detail:
-                                                                    </div>
-                                                                    <div className="space-y-1">
-                                                                        {log.originalEntries.map(
-                                                                            (
-                                                                                entry,
-                                                                                idx,
-                                                                            ) => (
-                                                                                <div
-                                                                                    key={
-                                                                                        entry.id
-                                                                                    }
-                                                                                    className={`p-3 rounded-lg border text-sm ${isDarkMode ? "bg-slate-900 border-slate-700" : "bg-white border-gray-200"}`}>
-                                                                                    <div className="grid grid-cols-6 gap-4">
-                                                                                        <div>
-                                                                                            <span className="text-xs text-gray-500">
-                                                                                                Entry
-                                                                                                #
-                                                                                                {idx +
-                                                                                                    1}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <span className="text-xs text-gray-500">
-                                                                                                Date:
-                                                                                            </span>
-                                                                                            <div className="font-medium">
-                                                                                                {formatDate(
-                                                                                                    entry.date,
-                                                                                                )}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <span className="text-xs text-gray-500">
-                                                                                                Time:
-                                                                                            </span>
-                                                                                            <div className="font-mono text-xs">
-                                                                                                {
-                                                                                                    entry.timeLogged
-                                                                                                }
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        <div>
-                                                                                            <span className="text-xs text-gray-500">
-                                                                                                Status:
-                                                                                            </span>
-                                                                                            <div>
-                                                                                                <StatusBadge
-                                                                                                    status={
-                                                                                                        entry.status
-                                                                                                    }
-                                                                                                />
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        <div className="col-span-2">
-                                                                                            <span className="text-xs text-gray-500">
-                                                                                                Remarks:
-                                                                                            </span>
-                                                                                            <div className="text-xs">
-                                                                                                {entry.remarks ||
-                                                                                                    "—"}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
-                                                                            ),
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    )}
-                                                </React.Fragment>
-                                            ))}
-                                        </>
-                                    ) : (
-                                        // NORMAL VIEW
-                                        filteredLogs.map((log) => (
-                                            <tr
-                                                key={log.id}
-                                                className={`group transition-colors ${isDarkMode ? "hover:bg-slate-800/50" : "hover:bg-gray-50"}`}>
-                                                <td
-                                                    style={{
-                                                        width: columnWidths.date,
-                                                    }}
-                                                    className="px-6 py-4 font-medium truncate">
-                                                    {formatDate(log.date)}
-                                                </td>
-                                                <td
-                                                    className="px-6 py-4 "
-                                                    style={{
-                                                        width: columnWidths.jiraId,
-                                                    }}>
-                                                    <span className="px-2 py-1 rounded text-xs font-mono bg-gray-100 dark:bg-slate-800">
-                                                        {log.jiraId}
-                                                    </span>
-                                                </td>
-                                                <td
-                                                    className="px-6 py-4 max-w-xs truncate"
-                                                    style={{
-                                                        width: columnWidths.description,
-                                                    }}>
-                                                    <Tooltip
-                                                        text={log.description}>
-                                                        <span className="block truncate">
-                                                            {log.description}
-                                                        </span>
-                                                    </Tooltip>
-                                                </td>
-
-                                                <td
-                                                    className="px-6 py-4 font-mono text-xs"
-                                                    style={{
-                                                        width: columnWidths.timeLogged,
-                                                    }}>
-                                                    {log.timeLogged}
-                                                </td>
-                                                <td
-                                                    className="px-6 py-4"
-                                                    style={{
-                                                        width: columnWidths.status,
-                                                    }}>
-                                                    <StatusBadge
-                                                        status={log.status}
-                                                    />
-                                                </td>
-                                                <td
-                                                    className="px-6 py-4"
-                                                    style={{
-                                                        width: columnWidths.projectName,
-                                                    }}>
-                                                    <Tooltip
-                                                        text={log.projectName}>
-                                                        <span className="block truncate">
-                                                            {log.projectName}
-                                                        </span>
-                                                    </Tooltip>
-                                                </td>
-
-                                                <td
-                                                    style={{
-                                                        width: columnWidths.remarks,
-                                                    }}
-                                                    className="px-6 py-4 text-xs opacity-80 truncate">
-                                                    {log.remarks || "—"}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        <button
-                                                            onClick={() =>
-                                                                openEditModal(
-                                                                    log,
-                                                                )
-                                                            }
-                                                            className="p-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 transition-colors"
-                                                            title="Edit">
-                                                            <Edit2 className="w-4 h-4" />
-                                                        </button>
-                                                        <button
-                                                            onClick={() =>
-                                                                handleDelete(
-                                                                    log.id,
-                                                                )
-                                                            }
-                                                            className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors"
-                                                            title="Delete">
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </main>
+            {/* Background Ambience */}
+            <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+                <div
+                    className={`absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full mix-blend-screen filter blur-[120px] opacity-30 animate-blob ${isDarkMode ? "bg-red-800" : "bg-red-400"}`}></div>
+                <div
+                    className={`absolute top-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full mix-blend-screen filter blur-[120px] opacity-30 animate-blob animation-delay-2000 ${isDarkMode ? "bg-orange-800" : "bg-orange-400"}`}></div>
+                <div
+                    className={`absolute bottom-[-20%] left-[20%] w-[60%] h-[60%] rounded-full mix-blend-screen filter blur-[120px] opacity-30 animate-blob animation-delay-4000 ${isDarkMode ? "bg-amber-800" : "bg-amber-400"}`}></div>
+                <div
+                    className={`absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150`}></div>
             </div>
 
-            {/* ============= MODAL ============= */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div
-                        className={`w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden ${isDarkMode ? "bg-slate-900 border border-slate-800" : "bg-white"}`}>
-                        <div
-                            className={`px-6 py-4 border-b flex items-center justify-between ${isDarkMode ? "border-slate-800" : "border-gray-100"}`}>
-                            <h3 className="text-lg font-bold flex items-center gap-2">
-                                {modalMode === "add" ? (
-                                    <Plus
-                                        className={`w-5 h-5 ${getTheme().text}`}
-                                    />
-                                ) : (
-                                    <Edit2
-                                        className={`w-5 h-5 ${getTheme().text}`}
-                                    />
+            <div className="relative z-10 flex h-screen overflow-hidden">
+                {/* ==================== GLASS SIDEBAR ==================== */}
+                <aside
+                    className={`${isSidebarOpen ? "w-80" : "w-20"} transition-all duration-500 ease-in-out h-full border-r ${isDarkMode ? "border-white/10 bg-black/20" : "border-orange-900/5 bg-white/40"} backdrop-blur-xl flex flex-col justify-between`}>
+                    <div className="flex-1 overflow-y-auto scrollbar-thin">
+                        <div className="h-20 flex items-center justify-center border-b border-white/5">
+                            <div
+                                className={`flex items-center gap-3 font-bold text-xl tracking-tight ${isSidebarOpen ? "px-6" : "px-0"}`}>
+                                <div
+                                    className={`p-2 rounded-xl bg-gradient-to-tr ${THEME.gradient} shadow-lg shadow-orange-500/20`}>
+                                    <LayoutDashboard className="w-5 h-5 text-white" />
+                                </div>
+                                {isSidebarOpen && (
+                                    <span
+                                        className={`bg-clip-text text-transparent bg-gradient-to-r ${isDarkMode ? "from-white to-white/60" : "from-gray-900 to-gray-600"}`}>
+                                        WorkLog Pro
+                                    </span>
                                 )}
-                                {modalMode === "add"
-                                    ? "New Entry"
-                                    : "Edit Entry"}
-                            </h3>
-                            <button
-                                onClick={() => setIsModalOpen(false)}
-                                className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
-                                <X className="w-5 h-5" />
-                            </button>
+                            </div>
                         </div>
 
-                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <InputGroup
-                                    label="Date"
-                                    type="date"
-                                    value={formData.date}
-                                    onChange={(e) =>
-                                        setFormData({
-                                            ...formData,
-                                            date: e.target.value,
-                                        })
-                                    }
-                                    isDark={isDarkMode}
-                                    required
-                                />
-                                <SelectGroup
-                                    label="Jira ID"
-                                    value={formData.jiraId}
-                                    onChange={(e) =>
-                                        setFormData({
-                                            ...formData,
-                                            jiraId: e.target.value,
-                                        })
-                                    }
-                                    options={jiraIdList}
-                                    isDark={isDarkMode}
-                                    required
-                                />
-                            </div>
+                        <nav className="p-4 space-y-2">
+                            <SidebarItem
+                                icon={<Layers />}
+                                label="Dashboard"
+                                active={currentView === VIEW_MODES.DASHBOARD}
+                                isOpen={isSidebarOpen}
+                                theme={THEME}
+                                isDark={isDarkMode}
+                                onClick={() =>
+                                    setCurrentView(VIEW_MODES.DASHBOARD)
+                                }
+                            />
+                            <SidebarItem
+                                icon={<BarChart3 />}
+                                label="Analytics"
+                                active={currentView === VIEW_MODES.ANALYTICS}
+                                isOpen={isSidebarOpen}
+                                theme={THEME}
+                                isDark={isDarkMode}
+                                onClick={() =>
+                                    setCurrentView(VIEW_MODES.ANALYTICS)
+                                }
+                            />
+                            <SidebarItem
+                                icon={<CalendarDays />}
+                                label="Calendar"
+                                active={currentView === VIEW_MODES.CALENDAR}
+                                isOpen={isSidebarOpen}
+                                theme={THEME}
+                                isDark={isDarkMode}
+                                onClick={() =>
+                                    setCurrentView(VIEW_MODES.CALENDAR)
+                                }
+                            />
+                            <SidebarItem
+                                icon={<FolderKanban />}
+                                label="Projects"
+                                active={currentView === VIEW_MODES.PROJECTS}
+                                isOpen={isSidebarOpen}
+                                theme={THEME}
+                                isDark={isDarkMode}
+                                onClick={() =>
+                                    setCurrentView(VIEW_MODES.PROJECTS)
+                                }
+                            />
+                        </nav>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <SelectGroup
-                                    label="Project"
-                                    value={formData.projectName}
-                                    onChange={(e) =>
-                                        setFormData({
-                                            ...formData,
-                                            projectName: e.target.value,
-                                        })
-                                    }
-                                    options={projectList}
-                                    isDark={isDarkMode}
-                                    required
-                                />
-                                <div className="grid grid-cols-2 gap-2">
-                                    <InputGroup
-                                        label="Time"
-                                        placeholder="e.g. 2h 30m"
-                                        value={formData.timeLogged}
-                                        onChange={(e) =>
-                                            setFormData({
-                                                ...formData,
-                                                timeLogged: e.target.value,
+                        {isSidebarOpen && (
+                            <div className="px-6 py-6">
+                                <div
+                                    className={`text-xs font-semibold uppercase mb-4 tracking-wider ${isDarkMode ? "text-white/40" : "text-gray-500/80"}`}>
+                                    <Filter className="w-3 h-3 inline mr-2" />
+                                    Smart Filters
+                                </div>
+
+                                {/* Quick Date Filters */}
+                                <div className="space-y-2 mb-4">
+                                    <button
+                                        onClick={() => setQuickFilter("today")}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                                            filters.showToday
+                                                ? `bg-gradient-to-r ${THEME.gradient} text-white shadow-lg`
+                                                : isDarkMode
+                                                  ? "bg-white/5 hover:bg-white/10 text-white/70"
+                                                  : "bg-white hover:bg-gray-50 text-gray-600"
+                                        }`}>
+                                        📅 Today
+                                    </button>
+                                    <button
+                                        onClick={() => setQuickFilter("week")}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                                            filters.showThisWeek
+                                                ? `bg-gradient-to-r ${THEME.gradient} text-white shadow-lg`
+                                                : isDarkMode
+                                                  ? "bg-white/5 hover:bg-white/10 text-white/70"
+                                                  : "bg-white hover:bg-gray-50 text-gray-600"
+                                        }`}>
+                                        📆 This Week
+                                    </button>
+                                    <button
+                                        onClick={() => setQuickFilter("month")}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                                            filters.showThisMonth
+                                                ? `bg-gradient-to-r ${THEME.gradient} text-white shadow-lg`
+                                                : isDarkMode
+                                                  ? "bg-white/5 hover:bg-white/10 text-white/70"
+                                                  : "bg-white hover:bg-gray-50 text-gray-600"
+                                        }`}>
+                                        🗓️ This Month
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <GlassSelect
+                                        label="Project"
+                                        value={filters.project}
+                                        onChange={(v) =>
+                                            setFilters({
+                                                ...filters,
+                                                project: v,
                                             })
                                         }
+                                        options={[
+                                            ...new Set(
+                                                worklogs.map(
+                                                    (w) => w.projectName,
+                                                ),
+                                            ),
+                                        ]}
                                         isDark={isDarkMode}
-                                        required
                                     />
-                                    <SelectGroup
+                                    <GlassSelect
                                         label="Status"
-                                        value={formData.status}
-                                        onChange={(e) =>
-                                            setFormData({
-                                                ...formData,
-                                                status: e.target.value,
+                                        value={filters.status}
+                                        onChange={(v) =>
+                                            setFilters({
+                                                ...filters,
+                                                status: v,
                                             })
                                         }
                                         options={[
@@ -1516,38 +904,379 @@ function App() {
                                             "Blocked",
                                         ]}
                                         isDark={isDarkMode}
-                                        required
                                     />
+                                    <GlassSelect
+                                        label="JIRA ID"
+                                        value={filters.jiraId}
+                                        onChange={(v) =>
+                                            setFilters({
+                                                ...filters,
+                                                jiraId: v,
+                                            })
+                                        }
+                                        options={getUniqueJiraIds()}
+                                        isDark={isDarkMode}
+                                    />
+
+                                    <div className="space-y-2">
+                                        <label
+                                            className={`text-[10px] font-bold uppercase tracking-wider ${isDarkMode ? "text-white/30" : "text-gray-400"}`}>
+                                            Custom Range
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={filters.dateRange.start}
+                                            onChange={(e) =>
+                                                setFilters({
+                                                    ...filters,
+                                                    dateRange: {
+                                                        ...filters.dateRange,
+                                                        start: e.target.value,
+                                                    },
+                                                    showToday: false,
+                                                    showThisWeek: false,
+                                                    showThisMonth: false,
+                                                })
+                                            }
+                                            className={`w-full appearance-none border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 transition-all ${isDarkMode ? "bg-white/5 border-white/10 hover:border-white/20 text-white/80 focus:ring-white/20" : "bg-white border-gray-200 hover:border-orange-300 text-gray-700 focus:ring-orange-200"}`}
+                                        />
+                                        <input
+                                            type="date"
+                                            value={filters.dateRange.end}
+                                            onChange={(e) =>
+                                                setFilters({
+                                                    ...filters,
+                                                    dateRange: {
+                                                        ...filters.dateRange,
+                                                        end: e.target.value,
+                                                    },
+                                                    showToday: false,
+                                                    showThisWeek: false,
+                                                    showThisMonth: false,
+                                                })
+                                            }
+                                            className={`w-full appearance-none border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 transition-all ${isDarkMode ? "bg-white/5 border-white/10 hover:border-white/20 text-white/80 focus:ring-white/20" : "bg-white border-gray-200 hover:border-orange-300 text-gray-700 focus:ring-orange-200"}`}
+                                        />
+                                    </div>
+
+                                    <button
+                                        onClick={clearAllFilters}
+                                        className={`w-full px-3 py-2 rounded-lg text-xs font-medium transition-colors ${isDarkMode ? "bg-red-500/20 hover:bg-red-500/30 text-red-300" : "bg-red-50 hover:bg-red-100 text-red-600"}`}>
+                                        Clear All Filters
+                                    </button>
                                 </div>
                             </div>
+                        )}
+                    </div>
 
-                            <div>
-                                <label className="block text-xs font-medium mb-1.5 opacity-70">
-                                    Description
-                                </label>
-                                <textarea
-                                    rows="3"
-                                    className={`w-full px-3 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-opacity-50 outline-none transition-all ${isDarkMode ? "bg-slate-950 border-slate-700 focus:ring-blue-500" : "bg-white border-gray-300 focus:ring-blue-500"}`}
-                                    value={formData.description}
-                                    onChange={(e) =>
-                                        setFormData({
-                                            ...formData,
-                                            description: e.target.value,
-                                        })
+                    <div className="p-4 border-t border-white/5">
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className={`w-full p-3 rounded-xl transition-colors flex items-center justify-center ${isDarkMode ? "hover:bg-white/5 text-white/60 hover:text-white" : "hover:bg-orange-500/5 text-gray-500 hover:text-gray-900"}`}>
+                            <Menu className="w-5 h-5" />
+                        </button>
+                    </div>
+                </aside>
+
+                {/* ==================== MAIN CONTENT ==================== */}
+                <main className="flex-1 h-full overflow-hidden flex flex-col relative">
+                    {/* Header */}
+                    <header
+                        className={`h-20 px-8 flex items-center justify-between backdrop-blur-md border-b ${isDarkMode ? "border-white/5 bg-black/10" : "border-orange-900/5 bg-white/30"}`}>
+                        <div
+                            className={`flex items-center gap-4 border rounded-full px-4 py-2 w-96 transition-all duration-300 ${isDarkMode ? "bg-white/5 border-white/10 focus-within:bg-white/10 focus-within:border-white/20" : "bg-white/40 border-orange-900/5 focus-within:bg-white/60 focus-within:border-orange-900/10 shadow-sm"}`}>
+                            <Search
+                                className={`w-4 h-4 ${isDarkMode ? "text-white/40" : "text-gray-400"}`}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Search logs, tickets, projects..."
+                                className={`bg-transparent border-none outline-none text-sm w-full ${isDarkMode ? "placeholder:text-white/30" : "placeholder:text-gray-400 text-gray-800"}`}
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setIsDarkMode(!isDarkMode)}
+                                className={`p-2.5 rounded-full border transition-colors ${isDarkMode ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-white border-gray-200 hover:bg-gray-50 text-gray-600 shadow-sm"}`}>
+                                {isDarkMode ? (
+                                    <Sun className="w-4 h-4" />
+                                ) : (
+                                    <Moon className="w-4 h-4" />
+                                )}
+                            </button>
+
+                            <label
+                                className={`p-2.5 rounded-full border transition-colors cursor-pointer ${isDarkMode ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-white border-gray-200 hover:bg-gray-50 text-gray-600 shadow-sm"}`}>
+                                <Upload className="w-4 h-4" />
+                                <input
+                                    type="file"
+                                    onChange={handleFileUpload}
+                                    accept=".xlsx,.csv"
+                                    className="hidden"
+                                />
+                            </label>
+
+                            <button
+                                onClick={() => {
+                                    setCurrentEntry(null);
+                                    setModalMode("add");
+                                    setIsModalOpen(true);
+                                }}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium text-sm text-white shadow-lg shadow-orange-500/20 bg-gradient-to-r ${THEME.gradient} hover:scale-105 active:scale-95 transition-all duration-300`}>
+                                <Plus className="w-4 h-4" /> New Entry
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Dashboard Content */}
+                    <div className="flex-1 overflow-y-auto p-8 space-y-8 scrollbar-thin scrollbar-thumb-white/10 hover:scrollbar-thumb-white/20">
+                        {/* Stats Row - Show filtered time */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                            <GlassStatCard
+                                title="Total Time"
+                                value={calculatedStats.totalTime}
+                                subtitle={
+                                    filters.dateRange.start ||
+                                    filters.showToday ||
+                                    filters.showThisWeek ||
+                                    filters.showThisMonth
+                                        ? "(Filtered)"
+                                        : "(All Time)"
+                                }
+                                icon={<Clock />}
+                                theme={THEME}
+                                delay={0}
+                                isDark={isDarkMode}
+                            />
+                            <GlassStatCard
+                                title="Entries"
+                                value={calculatedStats.entries}
+                                icon={<Zap />}
+                                theme={THEME}
+                                delay={100}
+                                isDark={isDarkMode}
+                            />
+                            <GlassStatCard
+                                title="Projects"
+                                value={calculatedStats.projects}
+                                icon={<Briefcase />}
+                                theme={THEME}
+                                delay={200}
+                                isDark={isDarkMode}
+                            />
+                            <GlassStatCard
+                                title="Tickets"
+                                value={calculatedStats.tickets}
+                                icon={<Target />}
+                                theme={THEME}
+                                delay={300}
+                                isDark={isDarkMode}
+                            />
+                        </div>
+
+                        {/* Conditional View Rendering */}
+                        {currentView === VIEW_MODES.DASHBOARD && (
+                            <DashboardView
+                                filteredData={filteredData}
+                                isMerged={isMerged}
+                                setIsMerged={setIsMerged}
+                                expandedRows={expandedRows}
+                                setExpandedRows={setExpandedRows}
+                                showColumnMenu={showColumnMenu}
+                                setShowColumnMenu={setShowColumnMenu}
+                                visibleColumns={visibleColumns}
+                                toggleColumnVisibility={toggleColumnVisibility}
+                                getVisibleColumns={getVisibleColumns}
+                                columnWidths={columnWidths}
+                                startResize={startResize}
+                                formatDate={formatDate}
+                                getJiraUrl={getJiraUrl}
+                                setCurrentEntry={setCurrentEntry}
+                                setModalMode={setModalMode}
+                                setIsModalOpen={setIsModalOpen}
+                                handleDelete={handleDelete}
+                                exportToCSV={exportToCSV}
+                                exportToXLSX={exportToXLSX}
+                                isDarkMode={isDarkMode}
+                                theme={THEME}
+                                calculatedStats={calculatedStats}
+                            />
+                        )}
+
+                        {currentView === VIEW_MODES.ANALYTICS && (
+                            <AnalyticsView
+                                analyticsData={analyticsData}
+                                calculatedStats={calculatedStats}
+                                isDarkMode={isDarkMode}
+                                theme={THEME}
+                            />
+                        )}
+
+                        {currentView === VIEW_MODES.CALENDAR && (
+                            <CalendarView
+                                calendarData={calendarData}
+                                selectedCalendarDate={selectedCalendarDate}
+                                setSelectedCalendarDate={
+                                    setSelectedCalendarDate
+                                }
+                                formatDate={formatDate}
+                                formatTime={formatTime}
+                                parseTime={parseTime}
+                                getJiraUrl={getJiraUrl}
+                                isDarkMode={isDarkMode}
+                                theme={THEME}
+                            />
+                        )}
+
+                        {currentView === VIEW_MODES.PROJECTS && (
+                            <ProjectsView
+                                analyticsData={analyticsData}
+                                worklogs={worklogs}
+                                filteredData={filteredData}
+                                formatTime={formatTime}
+                                parseTime={parseTime}
+                                isDarkMode={isDarkMode}
+                                theme={THEME}
+                            />
+                        )}
+                    </div>
+                </main>
+            </div>
+
+            {/* ==================== GLASS MODAL ==================== */}
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+                        onClick={() => setIsModalOpen(false)}></div>
+                    <div
+                        className={`relative w-full max-w-lg rounded-3xl border shadow-2xl overflow-hidden animate-scale-in ${isDarkMode ? "bg-[#1a1a1a]/90 border-white/10" : "bg-white/95 border-gray-200"} backdrop-blur-xl`}>
+                        <div
+                            className={`p-6 border-b flex items-center justify-between bg-gradient-to-r ${THEME.gradient} ${isDarkMode ? "bg-opacity-10 border-white/10" : "bg-opacity-90 border-transparent"}`}>
+                            <h3
+                                className={`text-lg font-bold flex items-center gap-2 ${isDarkMode ? "text-white" : "text-white"}`}>
+                                {modalMode === "add" ? (
+                                    <Plus className="w-5 h-5" />
+                                ) : (
+                                    <Edit2 className="w-5 h-5" />
+                                )}
+                                {modalMode === "add"
+                                    ? "New Entry"
+                                    : "Edit Entry"}
+                            </h3>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="p-1 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                const formData = new FormData(e.target);
+                                const data = {
+                                    date: formData.get("date"),
+                                    jiraId: formData.get("jiraId"),
+                                    projectName: formData.get("projectName"),
+                                    description: formData.get("description"),
+                                    timeLogged: formData.get("timeLogged"),
+                                    status: formData.get("status"),
+                                    remarks: formData.get("remarks"),
+                                };
+                                if (currentEntry) {
+                                    data.id = currentEntry.id;
+                                }
+                                handleSave(data);
+                            }}
+                            className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <GlassInput
+                                    name="date"
+                                    label="Date"
+                                    type="date"
+                                    defaultValue={
+                                        currentEntry?.date
+                                            ? new Date(currentEntry.date)
+                                                  .toISOString()
+                                                  .split("T")[0]
+                                            : new Date()
+                                                  .toISOString()
+                                                  .split("T")[0]
                                     }
+                                    isDark={isDarkMode}
+                                    required
+                                />
+                                <GlassInput
+                                    name="jiraId"
+                                    label="Jira ID"
+                                    placeholder="PROJ-123"
+                                    defaultValue={currentEntry?.jiraId}
+                                    isDark={isDarkMode}
                                     required
                                 />
                             </div>
 
-                            <InputGroup
+                            <GlassInput
+                                name="projectName"
+                                label="Project"
+                                placeholder="Web App..."
+                                defaultValue={currentEntry?.projectName}
+                                isDark={isDarkMode}
+                                required
+                            />
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <GlassInput
+                                    name="timeLogged"
+                                    label="Time (e.g. 2h 30m)"
+                                    placeholder="2h 30m"
+                                    defaultValue={currentEntry?.timeLogged}
+                                    isDark={isDarkMode}
+                                    required
+                                />
+                                <div className="space-y-1">
+                                    <label
+                                        className={`text-xs font-semibold uppercase ${isDarkMode ? "text-white/50" : "text-gray-500"}`}>
+                                        Status
+                                    </label>
+                                    <select
+                                        name="status"
+                                        defaultValue={
+                                            currentEntry?.status ||
+                                            "In Progress"
+                                        }
+                                        className={`w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 transition-all ${isDarkMode ? "bg-black/20 border border-white/10 text-white focus:border-white/30 focus:ring-white/20" : "bg-gray-50 border border-gray-200 text-gray-900 focus:border-orange-500 focus:ring-orange-200"}`}>
+                                        <option value="In Progress">
+                                            In Progress
+                                        </option>
+                                        <option value="Done">Done</option>
+                                        <option value="Pending">Pending</option>
+                                        <option value="Blocked">Blocked</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label
+                                    className={`text-xs font-semibold uppercase ${isDarkMode ? "text-white/50" : "text-gray-500"}`}>
+                                    Description
+                                </label>
+                                <textarea
+                                    name="description"
+                                    rows="3"
+                                    defaultValue={currentEntry?.description}
+                                    required
+                                    className={`w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 transition-all resize-none ${isDarkMode ? "bg-black/20 border border-white/10 text-white focus:border-white/30 focus:ring-white/20" : "bg-gray-50 border border-gray-200 text-gray-900 focus:border-orange-500 focus:ring-orange-200"}`}></textarea>
+                            </div>
+
+                            <GlassInput
+                                name="remarks"
                                 label="Remarks (Optional)"
-                                value={formData.remarks}
-                                onChange={(e) =>
-                                    setFormData({
-                                        ...formData,
-                                        remarks: e.target.value,
-                                    })
-                                }
+                                defaultValue={currentEntry?.remarks}
                                 isDark={isDarkMode}
                             />
 
@@ -1555,204 +1284,963 @@ function App() {
                                 <button
                                     type="button"
                                     onClick={() => setIsModalOpen(false)}
-                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isDarkMode ? "hover:bg-slate-800" : "hover:bg-gray-100"}`}>
+                                    className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDarkMode ? "hover:bg-white/5 text-white/70" : "hover:bg-gray-100 text-gray-600"}`}>
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className={`px-6 py-2 rounded-lg text-sm font-medium text-white shadow-lg shadow-blue-500/20 active:scale-95 transition-all ${getTheme().primary} ${getTheme().hover}`}>
-                                    Save Entry
+                                    className={`px-6 py-2.5 rounded-xl text-sm font-bold text-white shadow-lg shadow-orange-500/20 bg-gradient-to-r ${THEME.gradient} hover:scale-105 active:scale-95 transition-all`}>
+                                    Save Changes
                                 </button>
                             </div>
                         </form>
                     </div>
                 </div>
             )}
+
+            {/* Styles for animation */}
+            <style>{`
+        @keyframes blob {
+          0% { transform: translate(0px, 0px) scale(1); }
+          33% { transform: translate(30px, -50px) scale(1.1); }
+          66% { transform: translate(-20px, 20px) scale(0.9); }
+          100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob { animation: blob 10s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+        .animation-delay-4000 { animation-delay: 4s; }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; opacity: 0; }
+
+        @keyframes scaleIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-scale-in { animation: scaleIn 0.3s ease-out forwards; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+        .scrollbar-thin::-webkit-scrollbar {
+          width: 6px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 3px;
+        }
+        .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.2);
+        }
+      `}</style>
         </div>
     );
 }
 
-// ============= SUB COMPONENTS =============
+// ==========================================
+// 🧱 SUB-COMPONENTS
+// ==========================================
 
-const StatCard = ({ title, value, icon, color, bg }) => (
+const SidebarItem = ({
+    icon,
+    label,
+    active,
+    isOpen,
+    theme,
+    isDark,
+    onClick,
+}) => (
     <div
-        className={`p-5 rounded-xl border flex items-center justify-between dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm hover:shadow-md transition-all`}>
-        <div>
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {title}
-            </p>
-            <h4 className="text-2xl font-bold mt-1">{value}</h4>
+        onClick={onClick}
+        className={`flex items-center gap-4 p-3 rounded-xl cursor-pointer transition-all duration-300 group ${active ? `bg-gradient-to-r ${theme.gradient} shadow-lg shadow-orange-500/20` : isDark ? "hover:bg-white/5" : "hover:bg-orange-50"}`}>
+        <div
+            className={`${active ? "text-white" : isDark ? "text-white/50 group-hover:text-white" : "text-gray-400 group-hover:text-gray-800"}`}>
+            {React.cloneElement(icon, { size: 20 })}
         </div>
-        <div className={`p-3 rounded-lg ${bg} ${color}`}>
-            {React.cloneElement(icon, { className: "w-6 h-6" })}
-        </div>
+        {isOpen && (
+            <span
+                className={`font-medium text-sm ${active ? "text-white" : isDark ? "text-white/60 group-hover:text-white" : "text-gray-500 group-hover:text-gray-900"}`}>
+                {label}
+            </span>
+        )}
     </div>
 );
 
-const FilterDropdown = ({
-    label,
-    icon,
+const GlassStatCard = ({
+    title,
     value,
-    onChange,
-    options,
+    subtitle,
+    icon,
     theme,
+    delay,
     isDark,
 }) => (
     <div
-        className={`p-3 rounded-lg border transition-colors ${value ? `${theme.light} ${theme.border}` : isDark ? "bg-slate-800/50 border-slate-700" : "bg-gray-50 border-gray-200"}`}>
-        <label className="flex items-center gap-2 text-xs font-semibold mb-2 opacity-70">
-            {icon} {label}
-        </label>
-        <select
-            value={value || ""}
-            onChange={(e) => onChange(e.target.value || null)}
-            className={`w-full bg-transparent text-sm font-medium outline-none cursor-pointer ${value ? theme.text : ""}`}>
-            <option value="">All {label}s</option>
-            {options.map((opt) => (
-                <option
-                    key={opt}
-                    value={opt}
-                    className={isDark ? "bg-slate-900" : ""}>
-                    {opt}
-                </option>
-            ))}
-        </select>
+        className={`relative overflow-hidden rounded-3xl p-6 border backdrop-blur-md group transition-all duration-300 animate-fade-in-up ${isDark ? "border-white/10 bg-white/5 hover:bg-white/10" : "border-white/40 bg-white/60 hover:bg-white/80 shadow-xl shadow-orange-500/5"}`}
+        style={{ animationDelay: `${delay}ms` }}>
+        <div
+            className={`absolute top-0 right-0 p-32 bg-gradient-to-br ${theme.gradient} opacity-5 blur-2xl rounded-full group-hover:opacity-10 transition-opacity`}></div>
+        <div className="relative z-10 flex justify-between items-start">
+            <div>
+                <p
+                    className={`text-sm font-medium uppercase tracking-wider ${isDark ? "text-white/40" : "text-gray-500"}`}>
+                    {title}
+                </p>
+                <h4
+                    className={`text-3xl font-bold mt-2 ${isDark ? "text-white/90" : "text-gray-800"}`}>
+                    {value}
+                </h4>
+                {subtitle && (
+                    <p
+                        className={`text-xs mt-1 ${isDark ? "text-white/30" : "text-gray-400"}`}>
+                        {subtitle}
+                    </p>
+                )}
+            </div>
+            <div
+                className={`p-3 rounded-2xl bg-gradient-to-br ${theme.gradient} text-white shadow-lg`}>
+                {icon}
+            </div>
+        </div>
     </div>
 );
 
-const SortableHeader = ({
-    label,
-    fKey,
-    sortConfig,
-    onSort,
-    width,
-    onResize,
-}) => (
-    <th
-        style={{ width }}
-        className="relative px-6 py-4 cursor-pointer select-none"
-        onClick={() => onSort(fKey)}>
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-                {label}
-                <div className="flex flex-col">
-                    <ChevronUp
-                        className={`w-3 h-3 -mb-1 ${
-                            sortConfig.key === fKey &&
-                            sortConfig.direction === "asc"
-                                ? "text-blue-500"
-                                : "text-gray-300 dark:text-slate-600"
-                        }`}
-                    />
-                    <ChevronDown
-                        className={`w-3 h-3 ${
-                            sortConfig.key === fKey &&
-                            sortConfig.direction === "desc"
-                                ? "text-blue-500"
-                                : "text-gray-300 dark:text-slate-600"
-                        }`}
-                    />
-                </div>
-            </div>
-
-            <div
-                onMouseDown={(e) => {
-                    e.stopPropagation();
-                    onResize(e, fKey);
-                }}
-                className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-blue-500"
-            />
-        </div>
-    </th>
-);
-
-const StatusBadge = ({ status }) => {
-    const styles = {
-        Done: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-        "In Progress":
-            "bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
-        Pending:
-            "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-        Blocked:
-            "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400",
-    };
-    return (
-        <span
-            className={`px-2.5 py-1 rounded-md text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>
-            {status}
-        </span>
-    );
-};
-
-const Tooltip = ({ text, children }) => {
-    const [pos, setPos] = React.useState({ x: 0, y: 0 });
-    const [show, setShow] = React.useState(false);
-
-    return (
-        <>
-            <span
-                onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setPos({
-                        x: rect.left + rect.width / 2,
-                        y: rect.top,
-                    });
-                    setShow(true);
-                }}
-                onMouseLeave={() => setShow(false)}
-                className="inline-block max-w-full truncate">
-                {children}
-            </span>
-
-            {show && (
-                <div
-                    style={{
-                        left: pos.x,
-                        top: pos.y,
-                        transform: "translate(-50%, -8px)",
-                    }}
-                    className="
-                        fixed z-9999
-                        bg-black text-white text-xs
-                        px-3 py-2 rounded-md shadow-lg
-                        max-w-xs whitespace-normal
-                        pointer-events-none
-                    ">
-                    {text}
-                </div>
-            )}
-        </>
-    );
-};
-
-const InputGroup = ({ label, isDark, ...props }) => (
-    <div>
-        <label className="block text-xs font-medium mb-1.5 opacity-70">
+const GlassInput = ({ label, isDark, ...props }) => (
+    <div className="space-y-1">
+        <label
+            className={`text-xs font-semibold uppercase ${isDark ? "text-white/50" : "text-gray-500"}`}>
             {label}
         </label>
         <input
-            className={`w-full px-3 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-opacity-50 outline-none transition-all ${isDark ? "bg-slate-950 border-slate-700 focus:ring-blue-500" : "bg-white border-gray-300 focus:ring-blue-500"}`}
+            className={`w-full rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 transition-all ${isDark ? "bg-black/20 border border-white/10 text-white placeholder:text-white/20 focus:border-white/30 focus:ring-white/20" : "bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:border-orange-500 focus:ring-orange-200"}`}
             {...props}
         />
     </div>
 );
 
-const SelectGroup = ({ label, options, isDark, ...props }) => (
-    <div>
-        <label className="block text-xs font-medium mb-1.5 opacity-70">
+const GlassSelect = ({ label, options, value, onChange, isDark }) => (
+    <div className="space-y-1.5">
+        <label
+            className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-white/30" : "text-gray-400"}`}>
             {label}
         </label>
-        <select
-            className={`w-full px-3 py-2 rounded-lg border text-sm focus:ring-2 focus:ring-opacity-50 outline-none transition-all ${isDark ? "bg-slate-950 border-slate-700 focus:ring-blue-500" : "bg-white border-gray-300 focus:ring-blue-500"}`}
-            {...props}>
-            <option value="">Select...</option>
-            {options.map((o) => (
-                <option key={o} value={o}>
-                    {o}
+        <div className="relative">
+            <select
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className={`w-full appearance-none border rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 cursor-pointer transition-all ${isDark ? "bg-white/5 border-white/10 hover:border-white/20 text-white/80 focus:ring-white/20" : "bg-white border-gray-200 hover:border-orange-300 text-gray-700 focus:ring-orange-200"}`}>
+                <option
+                    value=""
+                    className={isDark ? "bg-gray-900" : "bg-white"}>
+                    All {label}s
                 </option>
-            ))}
-        </select>
+                {options.map((opt) => (
+                    <option
+                        key={opt}
+                        value={opt}
+                        className={isDark ? "bg-gray-900" : "bg-white"}>
+                        {opt}
+                    </option>
+                ))}
+            </select>
+            <ChevronDown
+                className={`absolute right-3 top-2.5 w-3 h-3 pointer-events-none ${isDark ? "text-white/30" : "text-gray-400"}`}
+            />
+        </div>
     </div>
 );
 
-export default App;
+const StatusPill = ({ status, size = "md" }) => {
+    const config = {
+        Done: "bg-emerald-500/20 text-emerald-600 border-emerald-500/30",
+        "In Progress": "bg-blue-500/20 text-blue-600 border-blue-500/30",
+        Pending: "bg-amber-500/20 text-amber-600 border-amber-500/30",
+        Blocked: "bg-rose-500/20 text-rose-600 border-rose-500/30",
+    };
+    const c =
+        config[status] || "bg-gray-500/20 text-gray-500 border-gray-500/30";
+    return (
+        <span
+            className={`inline-flex items-center px-2.5 py-0.5 rounded-full border ${c} ${size === "sm" ? "text-[10px]" : "text-xs"} font-medium`}>
+            {status}
+        </span>
+    );
+};
+
+// Dashboard View Component
+const DashboardView = ({
+    filteredData,
+    isMerged,
+    setIsMerged,
+    expandedRows,
+    setExpandedRows,
+    showColumnMenu,
+    setShowColumnMenu,
+    visibleColumns,
+    toggleColumnVisibility,
+    getVisibleColumns,
+    columnWidths,
+    startResize,
+    formatDate,
+    getJiraUrl,
+    setCurrentEntry,
+    setModalMode,
+    setIsModalOpen,
+    handleDelete,
+    exportToCSV,
+    exportToXLSX,
+    isDarkMode,
+    theme,
+    calculatedStats,
+}) => (
+    <div
+        className={`rounded-3xl border overflow-hidden backdrop-blur-xl transition-colors duration-500 ${isDarkMode ? "bg-black/40 border-white/10" : "bg-white/60 border-white/40 shadow-xl shadow-orange-500/5"}`}>
+        <div className="p-6 border-b border-white/5 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+                <h2
+                    className={`text-xl font-bold tracking-tight ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                    Recent Worklogs
+                </h2>
+                <span
+                    className={`px-3 py-1 rounded-full border text-xs font-mono ${isDarkMode ? "bg-white/5 border-white/10 text-white/60" : "bg-orange-50 border-orange-100 text-orange-600"}`}>
+                    {filteredData.length} records • Time:{" "}
+                    {calculatedStats.totalTime}
+                </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+                <div className="relative">
+                    <button
+                        onClick={() => setShowColumnMenu(!showColumnMenu)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-300 ${isDarkMode ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                        {showColumnMenu ? (
+                            <EyeOff className="w-4 h-4" />
+                        ) : (
+                            <Eye className="w-4 h-4" />
+                        )}
+                        Columns
+                    </button>
+
+                    {showColumnMenu && (
+                        <div
+                            className={`absolute right-0 mt-2 w-48 rounded-xl border shadow-xl z-50 ${isDarkMode ? "bg-slate-900/95 border-white/10" : "bg-white border-gray-200"} backdrop-blur-xl`}>
+                            <div className="p-2 space-y-1">
+                                {ALL_COLUMNS.map((col) => (
+                                    <label
+                                        key={col.key}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${isDarkMode ? "hover:bg-white/5" : "hover:bg-gray-50"}`}>
+                                        <input
+                                            type="checkbox"
+                                            checked={visibleColumns.includes(
+                                                col.key,
+                                            )}
+                                            onChange={() =>
+                                                toggleColumnVisibility(col.key)
+                                            }
+                                            className="rounded"
+                                        />
+                                        <span
+                                            className={`text-sm ${isDarkMode ? "text-white/80" : "text-gray-700"}`}>
+                                            {col.label}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <button
+                    onClick={() => {
+                        setIsMerged(!isMerged);
+                        setExpandedRows({});
+                    }}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-300 ${isMerged ? `bg-orange-500/20 border-orange-500/50 text-orange-500` : isDarkMode ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                    {isMerged ? (
+                        <Split className="w-4 h-4" />
+                    ) : (
+                        <Merge className="w-4 h-4" />
+                    )}
+                    {isMerged ? "Unmerge" : "Merge"}
+                </button>
+                <button
+                    onClick={exportToCSV}
+                    className={`p-2 rounded-lg border transition-colors ${isDarkMode ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                    title="CSV">
+                    <Download className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={exportToXLSX}
+                    className={`p-2 rounded-lg border transition-colors ${isDarkMode ? "bg-white/5 border-white/10 hover:bg-white/10" : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                    title="Excel">
+                    <Download className="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+
+        <div className="overflow-x-auto">
+            <table
+                className="w-full text-left text-sm"
+                style={{ tableLayout: "fixed" }}>
+                <thead
+                    className={`${isDarkMode ? "bg-white/5 text-white/50" : "bg-orange-50/50 text-gray-500"} text-xs uppercase tracking-wider font-medium sticky top-0 z-20`}>
+                    <tr>
+                        {isMerged && <th className="p-4 w-12"></th>}
+                        {getVisibleColumns().map((col) => (
+                            <th
+                                key={col.key}
+                                className="p-4 relative group"
+                                style={{ width: columnWidths[col.key] }}>
+                                <div className="flex items-center justify-between">
+                                    <span>{col.label}</span>
+                                    <div
+                                        onMouseDown={(e) =>
+                                            startResize(e, col.key)
+                                        }
+                                        className="absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-orange-500 transition-colors"
+                                    />
+                                </div>
+                            </th>
+                        ))}
+                        <th className="p-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody
+                    className={`divide-y ${isDarkMode ? "divide-white/5" : "divide-gray-100"}`}>
+                    {filteredData.length === 0 ? (
+                        <tr>
+                            <td
+                                colSpan={getVisibleColumns().length + 2}
+                                className={`p-12 text-center ${isDarkMode ? "text-white/30" : "text-gray-400"}`}>
+                                <div className="flex flex-col items-center justify-center gap-3">
+                                    <AlertCircle className="w-10 h-10" />
+                                    <p>No logs found</p>
+                                </div>
+                            </td>
+                        </tr>
+                    ) : (
+                        filteredData.map((item, idx) => (
+                            <React.Fragment key={item.id}>
+                                <tr
+                                    className={`group transition-all duration-200 cursor-default animate-fade-in-up ${isDarkMode ? "hover:bg-white/5" : "hover:bg-orange-50/30"}`}
+                                    style={{ animationDelay: `${idx * 50}ms` }}>
+                                    {isMerged && (
+                                        <td className="p-4">
+                                            <button
+                                                onClick={() =>
+                                                    setExpandedRows((prev) => ({
+                                                        ...prev,
+                                                        [item.id]:
+                                                            !prev[item.id],
+                                                    }))
+                                                }
+                                                className={`p-1 rounded-md transition-colors ${isDarkMode ? "hover:bg-white/10 text-white/60" : "hover:bg-gray-100 text-gray-400"}`}>
+                                                {expandedRows[item.id] ? (
+                                                    <ChevronDown className="w-4 h-4" />
+                                                ) : (
+                                                    <ChevronRight className="w-4 h-4" />
+                                                )}
+                                            </button>
+                                        </td>
+                                    )}
+
+                                    {visibleColumns.includes("date") && (
+                                        <td
+                                            className={`p-4 font-medium truncate ${isDarkMode ? "text-white/90" : "text-gray-900"}`}
+                                            style={{
+                                                width: columnWidths.date,
+                                            }}>
+                                            {formatDate(
+                                                isMerged
+                                                    ? item.startDate
+                                                    : item.date,
+                                            )}
+                                            {isMerged && (
+                                                <div
+                                                    className={`text-[10px] ${isDarkMode ? "text-white/40" : "text-gray-400"}`}>
+                                                    to{" "}
+                                                    {formatDate(item.endDate)}
+                                                </div>
+                                            )}
+                                        </td>
+                                    )}
+
+                                    {visibleColumns.includes("jiraId") && (
+                                        <td
+                                            className="p-4"
+                                            style={{
+                                                width: columnWidths.jiraId,
+                                            }}>
+                                            <a
+                                                href={getJiraUrl(item.jiraId)}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className={`inline-flex items-center gap-1 px-2 py-1 rounded font-mono text-xs transition-colors ${isDarkMode ? "bg-white/5 border border-white/10 text-white/70 hover:bg-white/10 hover:text-orange-400" : "bg-gray-100 text-gray-600 hover:bg-orange-100 hover:text-orange-600"}`}>
+                                                {item.jiraId}
+                                                <ExternalLink className="w-3 h-3" />
+                                            </a>
+                                        </td>
+                                    )}
+
+                                    {visibleColumns.includes("description") && (
+                                        <td
+                                            className={`p-4 truncate ${isDarkMode ? "text-white/80" : "text-gray-600"}`}
+                                            style={{
+                                                width: columnWidths.description,
+                                            }}
+                                            title={item.description}>
+                                            {item.description}
+                                            {isMerged && (
+                                                <span
+                                                    className={`ml-2 text-xs ${isDarkMode ? "text-white/40" : "text-gray-400"}`}>
+                                                    ({item.entryCount} entries)
+                                                </span>
+                                            )}
+                                        </td>
+                                    )}
+
+                                    {visibleColumns.includes("timeLogged") && (
+                                        <td
+                                            className={`p-4 font-mono truncate ${isDarkMode ? "text-white/90" : "text-gray-800"}`}
+                                            style={{
+                                                width: columnWidths.timeLogged,
+                                            }}>
+                                            {isMerged
+                                                ? item.totalTime
+                                                : item.timeLogged}
+                                        </td>
+                                    )}
+
+                                    {!isMerged &&
+                                        visibleColumns.includes("status") && (
+                                            <td
+                                                className="p-4"
+                                                style={{
+                                                    width: columnWidths.status,
+                                                }}>
+                                                <StatusPill
+                                                    status={item.status}
+                                                />
+                                            </td>
+                                        )}
+
+                                    {visibleColumns.includes("projectName") && (
+                                        <td
+                                            className="p-4 truncate"
+                                            style={{
+                                                width: columnWidths.projectName,
+                                            }}
+                                            title={item.projectName}>
+                                            <div className="flex items-center gap-2">
+                                                <div
+                                                    className={`w-2 h-2 rounded-full bg-orange-400 shadow-[0_0_10px_rgba(251,146,60,0.5)]`}></div>
+                                                <span
+                                                    className={
+                                                        isDarkMode
+                                                            ? ""
+                                                            : "text-gray-700"
+                                                    }>
+                                                    {item.projectName}
+                                                </span>
+                                            </div>
+                                        </td>
+                                    )}
+
+                                    {!isMerged &&
+                                        visibleColumns.includes("remarks") && (
+                                            <td
+                                                className={`p-4 text-xs truncate ${isDarkMode ? "text-white/60" : "text-gray-500"}`}
+                                                style={{
+                                                    width: columnWidths.remarks,
+                                                }}
+                                                title={item.remarks}>
+                                                {item.remarks || "—"}
+                                            </td>
+                                        )}
+
+                                    <td className="p-4 text-right w-24">
+                                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            {!isMerged && (
+                                                <button
+                                                    onClick={() => {
+                                                        setCurrentEntry(item);
+                                                        setModalMode("edit");
+                                                        setIsModalOpen(true);
+                                                    }}
+                                                    className={`p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-blue-500/20 text-blue-300" : "hover:bg-blue-50 text-blue-600"}`}>
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() =>
+                                                    handleDelete(item.id)
+                                                }
+                                                className={`p-2 rounded-lg transition-colors ${isDarkMode ? "hover:bg-red-500/20 text-red-300" : "hover:bg-red-50 text-red-600"}`}>
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {isMerged && expandedRows[item.id] && (
+                                    <tr
+                                        className={`${isDarkMode ? "bg-white/5" : "bg-gray-50"} animate-fade-in`}>
+                                        <td
+                                            colSpan={
+                                                getVisibleColumns().length + 2
+                                            }
+                                            className="p-0">
+                                            <div className="p-4 pl-16 grid gap-2">
+                                                {item.originalEntries.map(
+                                                    (sub, i) => (
+                                                        <div
+                                                            key={i}
+                                                            className={`flex items-center justify-between p-3 rounded-lg border text-sm ${isDarkMode ? "bg-black/20 border-white/5" : "bg-white border-gray-200"}`}>
+                                                            <div className="flex gap-4 flex-1">
+                                                                <span
+                                                                    className={`w-24 font-mono text-xs ${isDarkMode ? "text-white/40" : "text-gray-400"}`}>
+                                                                    {formatDate(
+                                                                        sub.date,
+                                                                    )}
+                                                                </span>
+                                                                <a
+                                                                    href={getJiraUrl(
+                                                                        sub.jiraId,
+                                                                    )}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono text-xs transition-colors ${isDarkMode ? "bg-white/5 border border-white/10 text-white/70 hover:text-orange-400" : "bg-gray-100 text-gray-600 hover:text-orange-600"}`}>
+                                                                    {sub.jiraId}
+                                                                    <ExternalLink className="w-2.5 h-2.5" />
+                                                                </a>
+                                                                <span
+                                                                    className={
+                                                                        isDarkMode
+                                                                            ? "text-white/80"
+                                                                            : "text-gray-700"
+                                                                    }>
+                                                                    {
+                                                                        sub.description
+                                                                    }
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex gap-4 items-center">
+                                                                <span
+                                                                    className={`font-mono text-xs ${isDarkMode ? "text-white/60" : "text-gray-500"}`}>
+                                                                    {
+                                                                        sub.timeLogged
+                                                                    }
+                                                                </span>
+                                                                <StatusPill
+                                                                    status={
+                                                                        sub.status
+                                                                    }
+                                                                    size="sm"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    ),
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
+                        ))
+                    )}
+                </tbody>
+            </table>
+        </div>
+    </div>
+);
+
+// Analytics View Component
+const AnalyticsView = ({
+    analyticsData,
+    calculatedStats,
+    isDarkMode,
+    theme,
+}) => (
+    <div className="space-y-6">
+        <h2
+            className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            <BarChart3 className="w-6 h-6 inline mr-2" />
+            Analytics Dashboard
+        </h2>
+
+        {/* Project Breakdown */}
+        <div
+            className={`rounded-3xl border overflow-hidden backdrop-blur-xl ${isDarkMode ? "bg-black/40 border-white/10" : "bg-white/60 border-white/40 shadow-xl"}`}>
+            <div className="p-6 border-b border-white/5">
+                <h3
+                    className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                    <FolderKanban className="w-5 h-5 inline mr-2" />
+                    Time by Project
+                </h3>
+            </div>
+            <div className="p-6">
+                <div className="space-y-4">
+                    {analyticsData.projectBreakdown.map((project, idx) => (
+                        <div key={idx} className="space-y-2">
+                            <div className="flex justify-between items-center">
+                                <span
+                                    className={`font-medium ${isDarkMode ? "text-white/90" : "text-gray-800"}`}>
+                                    {project.name}
+                                </span>
+                                <div className="flex items-center gap-4">
+                                    <span
+                                        className={`text-sm ${isDarkMode ? "text-white/60" : "text-gray-600"}`}>
+                                        {project.tickets} tickets •{" "}
+                                        {project.entries} entries
+                                    </span>
+                                    <span
+                                        className={`font-mono font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                        {project.formattedTime}
+                                    </span>
+                                    <span
+                                        className={`text-xs ${isDarkMode ? "text-white/40" : "text-gray-400"}`}>
+                                        {project.percentage}%
+                                    </span>
+                                </div>
+                            </div>
+                            <div
+                                className={`h-2 rounded-full overflow-hidden ${isDarkMode ? "bg-white/5" : "bg-gray-200"}`}>
+                                <div
+                                    className={`h-full bg-gradient-to-r ${theme.gradient}`}
+                                    style={{ width: `${project.percentage}%` }}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+
+        {/* Status Breakdown */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div
+                className={`rounded-3xl border overflow-hidden backdrop-blur-xl ${isDarkMode ? "bg-black/40 border-white/10" : "bg-white/60 border-white/40 shadow-xl"}`}>
+                <div className="p-6 border-b border-white/5">
+                    <h3
+                        className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                        <Activity className="w-5 h-5 inline mr-2" />
+                        Status Breakdown
+                    </h3>
+                </div>
+                <div className="p-6 space-y-3">
+                    {analyticsData.statusBreakdown.map((status, idx) => (
+                        <div
+                            key={idx}
+                            className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <StatusPill status={status.status} />
+                            </div>
+                            <div className="text-right">
+                                <div
+                                    className={`font-mono font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                    {status.formattedTime}
+                                </div>
+                                <div
+                                    className={`text-xs ${isDarkMode ? "text-white/40" : "text-gray-400"}`}>
+                                    {status.count} entries
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div
+                className={`rounded-3xl border overflow-hidden backdrop-blur-xl ${isDarkMode ? "bg-black/40 border-white/10" : "bg-white/60 border-white/40 shadow-xl"}`}>
+                <div className="p-6 border-b border-white/5">
+                    <h3
+                        className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                        <TrendingUp className="w-5 h-5 inline mr-2" />
+                        Recent Activity
+                    </h3>
+                </div>
+                <div className="p-6 space-y-3">
+                    {analyticsData.dailyBreakdown.map((day, idx) => (
+                        <div
+                            key={idx}
+                            className="flex justify-between items-center">
+                            <span
+                                className={`text-sm ${isDarkMode ? "text-white/70" : "text-gray-600"}`}>
+                                {day.date}
+                            </span>
+                            <span
+                                className={`font-mono font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                {day.formattedTime}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+// Calendar View Component
+const CalendarView = ({
+    calendarData,
+    selectedCalendarDate,
+    setSelectedCalendarDate,
+    formatDate,
+    formatTime,
+    parseTime,
+    getJiraUrl,
+    isDarkMode,
+    theme,
+}) => {
+    const dates = Object.keys(calendarData).sort().reverse();
+
+    return (
+        <div className="space-y-6">
+            <h2
+                className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                <CalendarDays className="w-6 h-6 inline mr-2" />
+                Calendar View
+            </h2>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Date List */}
+                <div
+                    className={`rounded-3xl border overflow-hidden backdrop-blur-xl ${isDarkMode ? "bg-black/40 border-white/10" : "bg-white/60 border-white/40 shadow-xl"}`}>
+                    <div className="p-6 border-b border-white/5">
+                        <h3
+                            className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                            Dates
+                        </h3>
+                    </div>
+                    <div className="p-4 space-y-2 max-h-[600px] overflow-y-auto">
+                        {dates.map((date) => {
+                            const dayLogs = calendarData[date];
+                            const totalTime = dayLogs.reduce(
+                                (acc, log) => acc + parseTime(log.timeLogged),
+                                0,
+                            );
+                            return (
+                                <button
+                                    key={date}
+                                    onClick={() =>
+                                        setSelectedCalendarDate(date)
+                                    }
+                                    className={`w-full text-left p-4 rounded-xl transition-all ${
+                                        selectedCalendarDate === date
+                                            ? `bg-gradient-to-r ${theme.gradient} text-white shadow-lg`
+                                            : isDarkMode
+                                              ? "bg-white/5 hover:bg-white/10 text-white/80"
+                                              : "bg-white hover:bg-gray-50 text-gray-700"
+                                    }`}>
+                                    <div className="flex justify-between items-center">
+                                        <div>
+                                            <div className="font-semibold">
+                                                {formatDate(date)}
+                                            </div>
+                                            <div
+                                                className={`text-xs mt-1 ${selectedCalendarDate === date ? "text-white/80" : isDarkMode ? "text-white/40" : "text-gray-400"}`}>
+                                                {dayLogs.length} entries
+                                            </div>
+                                        </div>
+                                        <div
+                                            className={`font-mono font-bold ${selectedCalendarDate === date ? "text-white" : isDarkMode ? "text-orange-400" : "text-orange-600"}`}>
+                                            {formatTime(totalTime)}
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Day Details */}
+                <div
+                    className={`lg:col-span-2 rounded-3xl border overflow-hidden backdrop-blur-xl ${isDarkMode ? "bg-black/40 border-white/10" : "bg-white/60 border-white/40 shadow-xl"}`}>
+                    <div className="p-6 border-b border-white/5">
+                        <h3
+                            className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                            {selectedCalendarDate
+                                ? formatDate(selectedCalendarDate)
+                                : "Select a date"}
+                        </h3>
+                    </div>
+                    <div className="p-6">
+                        {selectedCalendarDate &&
+                        calendarData[selectedCalendarDate] ? (
+                            <div className="space-y-3">
+                                {calendarData[selectedCalendarDate].map(
+                                    (log, idx) => (
+                                        <div
+                                            key={idx}
+                                            className={`p-4 rounded-xl border ${isDarkMode ? "bg-white/5 border-white/10" : "bg-white border-gray-200"}`}>
+                                            <div className="flex justify-between items-start mb-2">
+                                                <a
+                                                    href={getJiraUrl(
+                                                        log.jiraId,
+                                                    )}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded font-mono text-xs transition-colors ${isDarkMode ? "bg-white/5 border border-white/10 text-white/70 hover:text-orange-400" : "bg-gray-100 text-gray-600 hover:text-orange-600"}`}>
+                                                    {log.jiraId}
+                                                    <ExternalLink className="w-3 h-3" />
+                                                </a>
+                                                <div className="flex items-center gap-2">
+                                                    <span
+                                                        className={`font-mono font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                                        {log.timeLogged}
+                                                    </span>
+                                                    <StatusPill
+                                                        status={log.status}
+                                                        size="sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div
+                                                className={`text-sm ${isDarkMode ? "text-white/80" : "text-gray-700"} mb-2`}>
+                                                {log.description}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <div
+                                                    className={`w-2 h-2 rounded-full bg-orange-400`}></div>
+                                                <span
+                                                    className={
+                                                        isDarkMode
+                                                            ? "text-white/60"
+                                                            : "text-gray-600"
+                                                    }>
+                                                    {log.projectName}
+                                                </span>
+                                                {log.remarks && (
+                                                    <span
+                                                        className={
+                                                            isDarkMode
+                                                                ? "text-white/40"
+                                                                : "text-gray-400"
+                                                        }>
+                                                        • {log.remarks}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ),
+                                )}
+                            </div>
+                        ) : (
+                            <div
+                                className={`text-center py-12 ${isDarkMode ? "text-white/30" : "text-gray-400"}`}>
+                                <Calendar className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                                <p>Select a date to view entries</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Projects View Component
+const ProjectsView = ({
+    analyticsData,
+    worklogs,
+    filteredData,
+    formatTime,
+    parseTime,
+    isDarkMode,
+    theme,
+}) => {
+    return (
+        <div className="space-y-6">
+            <h2
+                className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                <FolderKanban className="w-6 h-6 inline mr-2" />
+                Project Overview
+            </h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {analyticsData.projectBreakdown.map((project, idx) => (
+                    <div
+                        key={idx}
+                        className={`rounded-3xl border overflow-hidden backdrop-blur-xl transition-all hover:scale-105 ${isDarkMode ? "bg-black/40 border-white/10 hover:bg-black/60" : "bg-white/60 border-white/40 shadow-xl hover:bg-white/80"}`}>
+                        <div
+                            className={`p-6 bg-gradient-to-r ${theme.gradient} bg-opacity-10`}>
+                            <div className="flex items-center justify-between mb-4">
+                                <div
+                                    className={`p-3 rounded-xl bg-gradient-to-r ${theme.gradient} text-white shadow-lg`}>
+                                    <FolderKanban className="w-6 h-6" />
+                                </div>
+                                <div
+                                    className={`text-3xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                    {project.percentage}%
+                                </div>
+                            </div>
+                            <h3
+                                className={`text-lg font-bold mb-2 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                {project.name}
+                            </h3>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div className="flex justify-between items-center">
+                                <span
+                                    className={`text-sm ${isDarkMode ? "text-white/60" : "text-gray-600"}`}>
+                                    <Timer className="w-4 h-4 inline mr-1" />
+                                    Total Time
+                                </span>
+                                <span
+                                    className={`font-mono font-bold text-lg ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                    {project.formattedTime}
+                                </span>
+                            </div>
+
+                            <div className="flex justify-between items-center">
+                                <span
+                                    className={`text-sm ${isDarkMode ? "text-white/60" : "text-gray-600"}`}>
+                                    <Target className="w-4 h-4 inline mr-1" />
+                                    Tickets
+                                </span>
+                                <span
+                                    className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                    {project.tickets}
+                                </span>
+                            </div>
+
+                            <div className="flex justify-between items-center">
+                                <span
+                                    className={`text-sm ${isDarkMode ? "text-white/60" : "text-gray-600"}`}>
+                                    <Zap className="w-4 h-4 inline mr-1" />
+                                    Entries
+                                </span>
+                                <span
+                                    className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                                    {project.entries}
+                                </span>
+                            </div>
+
+                            <div
+                                className={`pt-4 border-t ${isDarkMode ? "border-white/10" : "border-gray-200"}`}>
+                                <div
+                                    className={`h-2 rounded-full overflow-hidden ${isDarkMode ? "bg-white/5" : "bg-gray-200"}`}>
+                                    <div
+                                        className={`h-full bg-gradient-to-r ${theme.gradient}`}
+                                        style={{
+                                            width: `${project.percentage}%`,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};

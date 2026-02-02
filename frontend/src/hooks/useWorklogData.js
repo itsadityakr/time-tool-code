@@ -5,13 +5,91 @@ import { parseTime, formatTime } from "../utils/helpers";
  * Custom hook for managing worklog data, filters, and calculations
  */
 export const useWorklogData = (worklogs, isMerged, filters, searchQuery) => {
-    // Merged data calculation
+    // Pre-filtered data (filters applied before merge)
+    const preFilteredData = useMemo(() => {
+        let data = [...worklogs];
+
+        // Search filter
+        if (searchQuery) {
+            const lowerQ = searchQuery.toLowerCase();
+            data = data.filter((item) =>
+                Object.values(item).some((val) =>
+                    String(val).toLowerCase().includes(lowerQ),
+                ),
+            );
+        }
+
+        // Project filter
+        if (filters.project) {
+            data = data.filter((item) => item.projectName === filters.project);
+        }
+
+        // Status filter
+        if (filters.status) {
+            data = data.filter((item) => item.status === filters.status);
+        }
+
+        // JIRA ID filter
+        if (filters.jiraId) {
+            data = data.filter((item) => item.jiraId === filters.jiraId);
+        }
+
+        // Date filters
+        if (filters.showToday) {
+            const today = new Date().toISOString().split("T")[0];
+            data = data.filter((item) => {
+                const itemDate = new Date(item.date)
+                    .toISOString()
+                    .split("T")[0];
+                return itemDate === today;
+            });
+        } else if (filters.showThisWeek) {
+            const today = new Date();
+            const day = today.getDay();
+            const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+            const weekStart = new Date(today.setDate(diff))
+                .toISOString()
+                .split("T")[0];
+            data = data.filter((item) => {
+                return new Date(item.date) >= new Date(weekStart);
+            });
+        } else if (filters.showThisMonth) {
+            const today = new Date();
+            const monthStart = new Date(
+                today.getFullYear(),
+                today.getMonth(),
+                1,
+            )
+                .toISOString()
+                .split("T")[0];
+            data = data.filter((item) => {
+                return new Date(item.date) >= new Date(monthStart);
+            });
+        }
+
+        // Custom date range
+        if (filters.dateRange.start) {
+            data = data.filter((item) => {
+                return new Date(item.date) >= new Date(filters.dateRange.start);
+            });
+        }
+
+        if (filters.dateRange.end) {
+            data = data.filter((item) => {
+                return new Date(item.date) <= new Date(filters.dateRange.end);
+            });
+        }
+
+        return data;
+    }, [worklogs, searchQuery, filters]);
+
+    // Merged data calculation (works on pre-filtered data)
     const mergedData = useMemo(() => {
         if (!isMerged) return [];
         const grouped = {};
 
-        const sortedRaw = [...worklogs].sort(
-            (a, b) => new Date(a.date) - new Date(b.date)
+        const sortedRaw = [...preFilteredData].sort(
+            (a, b) => new Date(a.date) - new Date(b.date),
         );
 
         sortedRaw.forEach((log) => {
@@ -23,7 +101,7 @@ export const useWorklogData = (worklogs, isMerged, filters, searchQuery) => {
         return Object.values(grouped).map((group, idx) => {
             const totalMinutes = group.reduce(
                 (acc, curr) => acc + parseTime(curr.timeLogged),
-                0
+                0,
             );
             return {
                 id: `merged_${idx}`,
@@ -38,83 +116,55 @@ export const useWorklogData = (worklogs, isMerged, filters, searchQuery) => {
                 originalEntries: group,
             };
         });
-    }, [worklogs, isMerged]);
+    }, [preFilteredData, isMerged]);
 
-    // Filtered data calculation
+    // Full merged data (merges ALL worklogs, not filtered - for "Show Original" feature)
+    const mergedDataFull = useMemo(() => {
+        if (!isMerged) return [];
+        const grouped = {};
+
+        // Get all worklogs sorted by date
+        const sortedRaw = [...worklogs].sort(
+            (a, b) => new Date(a.date) - new Date(b.date),
+        );
+
+        sortedRaw.forEach((log) => {
+            const key = `${log.jiraId}_${log.projectName}`;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(log);
+        });
+
+        // Only include groups that have at least one entry in the filtered data
+        const filteredKeys = new Set(
+            preFilteredData.map((log) => `${log.jiraId}_${log.projectName}`),
+        );
+
+        return Object.entries(grouped)
+            .filter(([key]) => filteredKeys.has(key))
+            .map(([key, group], idx) => {
+                const totalMinutes = group.reduce(
+                    (acc, curr) => acc + parseTime(curr.timeLogged),
+                    0,
+                );
+                return {
+                    id: `merged_full_${idx}`,
+                    no: idx + 1,
+                    jiraId: group[0].jiraId,
+                    projectName: group[0].projectName,
+                    description: group[0].description,
+                    startDate: group[0].date,
+                    endDate: group[group.length - 1].date,
+                    totalTime: formatTime(totalMinutes),
+                    entryCount: group.length,
+                    originalEntries: group,
+                };
+            });
+    }, [worklogs, preFilteredData, isMerged]);
+
+    // Filtered data - now simply returns either merged or pre-filtered data
     const filteredData = useMemo(() => {
-        let data = isMerged ? mergedData : worklogs;
-
-        // Search filter
-        if (searchQuery) {
-            const lowerQ = searchQuery.toLowerCase();
-            data = data.filter((item) =>
-                Object.values(item).some((val) =>
-                    String(val).toLowerCase().includes(lowerQ)
-                )
-            );
-        }
-
-        // Project filter
-        if (filters.project) {
-            data = data.filter((item) => item.projectName === filters.project);
-        }
-
-        // Status filter
-        if (filters.status && !isMerged) {
-            data = data.filter((item) => item.status === filters.status);
-        }
-
-        // JIRA ID filter
-        if (filters.jiraId) {
-            data = data.filter((item) => item.jiraId === filters.jiraId);
-        }
-
-        // Date filters
-        if (filters.showToday) {
-            const today = new Date().toISOString().split("T")[0];
-            data = data.filter((item) => {
-                const itemDate = isMerged ? item.startDate : item.date;
-                return new Date(itemDate).toISOString().split("T")[0] === today;
-            });
-        } else if (filters.showThisWeek) {
-            const today = new Date();
-            const day = today.getDay();
-            const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-            const weekStart = new Date(today.setDate(diff))
-                .toISOString()
-                .split("T")[0];
-            data = data.filter((item) => {
-                const itemDate = isMerged ? item.startDate : item.date;
-                return new Date(itemDate) >= new Date(weekStart);
-            });
-        } else if (filters.showThisMonth) {
-            const today = new Date();
-            const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
-                .toISOString()
-                .split("T")[0];
-            data = data.filter((item) => {
-                const itemDate = isMerged ? item.startDate : item.date;
-                return new Date(itemDate) >= new Date(monthStart);
-            });
-        }
-
-        // Custom date range
-        if (filters.dateRange.start) {
-            data = data.filter((item) => {
-                const date = isMerged ? item.startDate : item.date;
-                return new Date(date) >= new Date(filters.dateRange.start);
-            });
-        }
-
-        if (filters.dateRange.end) {
-            data = data.filter((item) => {
-                const date = isMerged ? item.endDate : item.date;
-                return new Date(date) <= new Date(filters.dateRange.end);
-            });
-        }
-
-        return data;
-    }, [worklogs, mergedData, isMerged, searchQuery, filters]);
+        return isMerged ? mergedData : preFilteredData;
+    }, [preFilteredData, mergedData, isMerged]);
 
     // Calculated statistics
     const calculatedStats = useMemo(() => {
@@ -207,7 +257,7 @@ export const useWorklogData = (worklogs, isMerged, filters, searchQuery) => {
                     count: data.count,
                     time: data.time,
                     formattedTime: formatTime(data.time),
-                })
+                }),
             ),
 
             dailyBreakdown: Object.entries(dailyBreakdown)
@@ -241,6 +291,7 @@ export const useWorklogData = (worklogs, isMerged, filters, searchQuery) => {
 
     return {
         mergedData,
+        mergedDataFull,
         filteredData,
         calculatedStats,
         analyticsData,

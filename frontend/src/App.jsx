@@ -16,12 +16,7 @@ import ProjectsView from "./views/ProjectsView";
 
 // Hooks & Utils
 import { useWorklogData } from "./hooks/useWorklogData";
-import {
-    formatDate,
-    parseTime,
-    formatTime,
-    getJiraUrl,
-} from "./utils/helpers";
+import { formatDate, parseTime, formatTime, getJiraUrl } from "./utils/helpers";
 import { exportToCSV, exportToXLSX } from "./utils/exportUtils";
 import {
     fetchWorklogs,
@@ -30,10 +25,16 @@ import {
     updateWorklog,
     deleteWorklog,
     uploadFile,
+    clearWorklogs,
 } from "./utils/apiService";
 
 // Constants
-import { THEME, VIEW_MODES, ALL_COLUMNS, DEFAULT_COLUMN_WIDTHS } from "./constants";
+import {
+    THEME,
+    VIEW_MODES,
+    ALL_COLUMNS,
+    DEFAULT_COLUMN_WIDTHS,
+} from "./constants";
 
 export default function App() {
     // State Management
@@ -46,6 +47,7 @@ export default function App() {
     const [showColumnMenu, setShowColumnMenu] = useState(false);
     const [currentView, setCurrentView] = useState(VIEW_MODES.DASHBOARD);
     const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+    const [showOriginal, setShowOriginal] = useState(false);
 
     // Column visibility and widths
     const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -92,10 +94,20 @@ export default function App() {
         localStorage.setItem("columnWidths", JSON.stringify(columnWidths));
     }, [columnWidths]);
 
-    // Data fetching
+    // Data fetching - clear worklogs on page load to start fresh
     useEffect(() => {
-        loadWorklogs();
-        loadStats();
+        const initializeApp = async () => {
+            try {
+                // Clear all worklogs on page load/reload
+                await clearWorklogs();
+                // Then load fresh (which will be empty)
+                loadWorklogs();
+                loadStats();
+            } catch (error) {
+                console.error("Error initializing app:", error);
+            }
+        };
+        initializeApp();
     }, []);
 
     const loadWorklogs = async () => {
@@ -119,6 +131,7 @@ export default function App() {
     // Use custom hook for data processing
     const {
         mergedData,
+        mergedDataFull,
         filteredData,
         calculatedStats,
         analyticsData,
@@ -245,7 +258,9 @@ export default function App() {
     return (
         <div
             className={`min-h-screen font-sans selection:bg-orange-500/30 selection:text-white transition-colors duration-500 ${
-                isDarkMode ? "bg-[#0a0a0a] text-white" : "bg-orange-50/50 text-gray-900"
+                isDarkMode
+                    ? "bg-[#0a0a0a] text-white"
+                    : "bg-orange-50/50 text-gray-900"
             }`}>
             <CursorFollower />
 
@@ -348,8 +363,11 @@ export default function App() {
                         {currentView === VIEW_MODES.DASHBOARD && (
                             <DashboardView
                                 filteredData={filteredData}
+                                mergedDataFull={mergedDataFull}
                                 isMerged={isMerged}
                                 setIsMerged={setIsMerged}
+                                showOriginal={showOriginal}
+                                setShowOriginal={setShowOriginal}
                                 expandedRows={expandedRows}
                                 setExpandedRows={setExpandedRows}
                                 showColumnMenu={showColumnMenu}
@@ -386,7 +404,9 @@ export default function App() {
                             <CalendarView
                                 calendarData={calendarData}
                                 selectedCalendarDate={selectedCalendarDate}
-                                setSelectedCalendarDate={setSelectedCalendarDate}
+                                setSelectedCalendarDate={
+                                    setSelectedCalendarDate
+                                }
                                 formatDate={formatDate}
                                 formatTime={formatTime}
                                 parseTime={parseTime}

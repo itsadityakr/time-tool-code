@@ -52,3 +52,11 @@ export const uploadFile = async (file) => {
     });
     return response.data;
 };
+
+/**
+ * Clear all worklogs
+ */
+export const clearWorklogs = async () => {
+    const response = await axios.delete(`${API_URL}/worklogs`);
+    return response.data;
+};

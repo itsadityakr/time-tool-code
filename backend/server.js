@@ -196,6 +196,13 @@ app.delete("/api/worklogs/:id", (req, res) => {
     res.json({ message: "Deleted successfully" });
 });
 
+// 8.1. Clear all worklogs
+// Example: DELETE /api/worklogs
+app.delete("/api/worklogs", (req, res) => {
+    worklogs = [];
+    res.json({ message: "All worklogs cleared successfully" });
+});
+
 // 8. Get statistics
 // This calculates and returns stats about worklogs
 app.get("/api/stats", (req, res) => {

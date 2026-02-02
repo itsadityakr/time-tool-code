@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useCallback, useState } from "react";
 import {
     Download,
     Eye,
@@ -11,14 +11,19 @@ import {
     Trash2,
     ExternalLink,
     AlertCircle,
+    List,
+    ListTree,
 } from "lucide-react";
 import { StatusPill } from "../components/UIComponents";
 import { ALL_COLUMNS } from "../constants";
 
 const DashboardView = ({
     filteredData,
+    mergedDataFull,
     isMerged,
     setIsMerged,
+    showOriginal,
+    setShowOriginal,
     expandedRows,
     setExpandedRows,
     showColumnMenu,
@@ -40,6 +45,40 @@ const DashboardView = ({
     theme,
     calculatedStats,
 }) => {
+    // Use full merged data when showOriginal is true, otherwise use filtered data
+    const displayData =
+        isMerged && showOriginal ? mergedDataFull : filteredData;
+
+    // Calculate stats for the displayed data
+    const displayStats =
+        isMerged && showOriginal
+            ? {
+                  ...calculatedStats,
+                  totalTime: mergedDataFull.reduce((acc, item) => {
+                      const timeStr = item.totalTime || "0h";
+                      const h = timeStr.match(/(\d+)h/);
+                      const m = timeStr.match(/(\d+)m/);
+                      let mins = 0;
+                      if (h) mins += parseInt(h[1]) * 60;
+                      if (m) mins += parseInt(m[1]);
+                      return acc + mins;
+                  }, 0),
+                  entries: mergedDataFull.length,
+              }
+            : calculatedStats;
+
+    // Format total time for display
+    const formatTimeFromMins = (mins) => {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return `${h}h ${m > 0 ? `${m}m` : ""}`.trim();
+    };
+
+    const displayTotalTime =
+        isMerged && showOriginal
+            ? formatTimeFromMins(displayStats.totalTime)
+            : calculatedStats.totalTime;
+
     return (
         <div
             className={`rounded-3xl border overflow-hidden backdrop-blur-xl transition-colors duration-500 ${
@@ -62,8 +101,12 @@ const DashboardView = ({
                                 ? "bg-white/5 border-white/10 text-white/60"
                                 : "bg-orange-50 border-orange-100 text-orange-600"
                         }`}>
-                        {filteredData.length} records • Time:{" "}
-                        {calculatedStats.totalTime}
+                        {displayData.length} records • Time: {displayTotalTime}
+                        {showOriginal && isMerged && (
+                            <span className="ml-1 text-blue-400">
+                                (Original)
+                            </span>
+                        )}
                     </span>
                 </div>
 
@@ -105,11 +148,11 @@ const DashboardView = ({
                                             <input
                                                 type="checkbox"
                                                 checked={visibleColumns.includes(
-                                                    col.key
+                                                    col.key,
                                                 )}
                                                 onChange={() =>
                                                     toggleColumnVisibility(
-                                                        col.key
+                                                        col.key,
                                                     )
                                                 }
                                                 className="rounded"
@@ -128,6 +171,26 @@ const DashboardView = ({
                             </div>
                         )}
                     </div>
+
+                    {/* Show Original (only in merged mode) */}
+                    {isMerged && (
+                        <button
+                            onClick={() => setShowOriginal(!showOriginal)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-300 ${
+                                showOriginal
+                                    ? `bg-blue-500/20 border-blue-500/50 text-blue-400`
+                                    : isDarkMode
+                                      ? "bg-white/5 border-white/10 hover:bg-white/10"
+                                      : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                            }`}>
+                            {showOriginal ? (
+                                <List className="w-4 h-4" />
+                            ) : (
+                                <ListTree className="w-4 h-4" />
+                            )}
+                            {showOriginal ? "Hide Original" : "Show Original"}
+                        </button>
+                    )}
 
                     {/* Merge/Unmerge */}
                     <button
@@ -212,7 +275,7 @@ const DashboardView = ({
                         className={`divide-y ${
                             isDarkMode ? "divide-white/5" : "divide-gray-100"
                         }`}>
-                        {filteredData.length === 0 ? (
+                        {displayData.length === 0 ? (
                             <tr>
                                 <td
                                     colSpan={getVisibleColumns().length + 2}
@@ -228,17 +291,14 @@ const DashboardView = ({
                                 </td>
                             </tr>
                         ) : (
-                            filteredData.map((item, idx) => (
+                            displayData.map((item, idx) => (
                                 <React.Fragment key={item.id}>
                                     <tr
-                                        className={`group transition-all duration-200 cursor-default animate-fade-in-up ${
+                                        className={`group transition-all duration-200 cursor-default ${idx < 20 ? "animate-fade-in-up" : ""} ${
                                             isDarkMode
                                                 ? "hover:bg-white/5"
                                                 : "hover:bg-orange-50/30"
-                                        }`}
-                                        style={{
-                                            animationDelay: `${idx * 50}ms`,
-                                        }}>
+                                        }`}>
                                         {isMerged && (
                                             <td className="p-4">
                                                 <button
@@ -250,7 +310,7 @@ const DashboardView = ({
                                                                     !prev[
                                                                         item.id
                                                                     ],
-                                                            })
+                                                            }),
                                                         )
                                                     }
                                                     className={`p-1 rounded-md transition-colors ${
@@ -280,7 +340,7 @@ const DashboardView = ({
                                                 {formatDate(
                                                     isMerged
                                                         ? item.startDate
-                                                        : item.date
+                                                        : item.date,
                                                 )}
                                                 {isMerged && (
                                                     <div
@@ -291,7 +351,7 @@ const DashboardView = ({
                                                         }`}>
                                                         to{" "}
                                                         {formatDate(
-                                                            item.endDate
+                                                            item.endDate,
                                                         )}
                                                     </div>
                                                 )}
@@ -306,7 +366,7 @@ const DashboardView = ({
                                                 }}>
                                                 <a
                                                     href={getJiraUrl(
-                                                        item.jiraId
+                                                        item.jiraId,
                                                     )}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
@@ -322,7 +382,7 @@ const DashboardView = ({
                                         )}
 
                                         {visibleColumns.includes(
-                                            "description"
+                                            "description",
                                         ) && (
                                             <td
                                                 className={`p-4 truncate ${
@@ -350,7 +410,7 @@ const DashboardView = ({
                                         )}
 
                                         {visibleColumns.includes(
-                                            "timeLogged"
+                                            "timeLogged",
                                         ) && (
                                             <td
                                                 className={`p-4 font-mono truncate ${
@@ -369,7 +429,7 @@ const DashboardView = ({
 
                                         {!isMerged &&
                                             visibleColumns.includes(
-                                                "status"
+                                                "status",
                                             ) && (
                                                 <td
                                                     className="p-4"
@@ -383,7 +443,7 @@ const DashboardView = ({
                                             )}
 
                                         {visibleColumns.includes(
-                                            "projectName"
+                                            "projectName",
                                         ) && (
                                             <td
                                                 className="p-4 truncate"
@@ -408,7 +468,7 @@ const DashboardView = ({
 
                                         {!isMerged &&
                                             visibleColumns.includes(
-                                                "remarks"
+                                                "remarks",
                                             ) && (
                                                 <td
                                                     className={`p-4 text-xs truncate ${
@@ -430,10 +490,14 @@ const DashboardView = ({
                                                     <button
                                                         onClick={() => {
                                                             setCurrentEntry(
-                                                                item
+                                                                item,
                                                             );
-                                                            setModalMode("edit");
-                                                            setIsModalOpen(true);
+                                                            setModalMode(
+                                                                "edit",
+                                                            );
+                                                            setIsModalOpen(
+                                                                true,
+                                                            );
                                                         }}
                                                         className={`p-2 rounded-lg transition-colors ${
                                                             isDarkMode
@@ -490,12 +554,12 @@ const DashboardView = ({
                                                                                 : "text-gray-400"
                                                                         }`}>
                                                                         {formatDate(
-                                                                            sub.date
+                                                                            sub.date,
                                                                         )}
                                                                     </span>
                                                                     <a
                                                                         href={getJiraUrl(
-                                                                            sub.jiraId
+                                                                            sub.jiraId,
                                                                         )}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
@@ -539,7 +603,7 @@ const DashboardView = ({
                                                                     />
                                                                 </div>
                                                             </div>
-                                                        )
+                                                        ),
                                                     )}
                                                 </div>
                                             </td>
@@ -555,4 +619,4 @@ const DashboardView = ({
     );
 };
 
-export default DashboardView;
+export default memo(DashboardView);

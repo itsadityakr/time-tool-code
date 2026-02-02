@@ -1,5 +1,5 @@
 import React from "react";
-import { Search, Moon, Sun, Upload, Plus } from "lucide-react";
+import { Search, Moon, Sun, Plus, Trash2 } from "lucide-react";
 import { THEME } from "../constants";
 
 const Header = ({
@@ -7,10 +7,11 @@ const Header = ({
     setSearchQuery,
     isDarkMode,
     setIsDarkMode,
-    handleFileUpload,
     setCurrentEntry,
     setModalMode,
     setIsModalOpen,
+    hasData,
+    onClearAll,
 }) => {
     return (
         <header
@@ -61,21 +62,19 @@ const Header = ({
                     )}
                 </button>
 
-                {/* File Upload */}
-                <label
-                    className={`p-2.5 rounded-full border transition-colors cursor-pointer ${
-                        isDarkMode
-                            ? "bg-white/5 border-white/10 hover:bg-white/10"
-                            : "bg-white border-gray-200 hover:bg-gray-50 text-gray-600 shadow-sm"
-                    }`}>
-                    <Upload className="w-4 h-4" />
-                    <input
-                        type="file"
-                        onChange={handleFileUpload}
-                        accept=".xlsx,.csv"
-                        className="hidden"
-                    />
-                </label>
+                {/* Clear All Button (only when data exists) */}
+                {hasData && (
+                    <button
+                        onClick={onClearAll}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm font-medium transition-all ${
+                            isDarkMode
+                                ? "bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+                                : "bg-red-50 border-red-200 text-red-600 hover:bg-red-100"
+                        }`}>
+                        <Trash2 className="w-4 h-4" />
+                        Clear All
+                    </button>
+                )}
 
                 {/* New Entry Button */}
                 <button

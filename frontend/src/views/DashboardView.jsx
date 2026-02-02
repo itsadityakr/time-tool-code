@@ -39,8 +39,7 @@ const DashboardView = ({
     setModalMode,
     setIsModalOpen,
     handleDelete,
-    exportToCSV,
-    exportToXLSX,
+    onOpenExportModal,
     isDarkMode,
     theme,
     calculatedStats,
@@ -213,28 +212,16 @@ const DashboardView = ({
                         {isMerged ? "Unmerge" : "Merge"}
                     </button>
 
-                    {/* Export CSV */}
+                    {/* Export Button */}
                     <button
-                        onClick={exportToCSV}
-                        className={`p-2 rounded-lg border transition-colors ${
+                        onClick={onOpenExportModal}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all duration-300 ${
                             isDarkMode
                                 ? "bg-white/5 border-white/10 hover:bg-white/10"
                                 : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                        }`}
-                        title="CSV">
+                        }`}>
                         <Download className="w-4 h-4" />
-                    </button>
-
-                    {/* Export Excel */}
-                    <button
-                        onClick={exportToXLSX}
-                        className={`p-2 rounded-lg border transition-colors ${
-                            isDarkMode
-                                ? "bg-white/5 border-white/10 hover:bg-white/10"
-                                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
-                        }`}
-                        title="Excel">
-                        <Download className="w-4 h-4" />
+                        Export
                     </button>
                 </div>
             </div>

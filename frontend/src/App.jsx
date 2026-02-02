@@ -6,6 +6,9 @@ import CursorFollower from "./components/CursorFollower";
 import Sidebar from "./components/Sidebar";
 import Header from "./components/Header";
 import Modal from "./components/Modal";
+import ExportModal from "./components/ExportModal";
+import UploadModal from "./components/UploadModal";
+import Toast from "./components/Toast";
 import { GlassStatCard } from "./components/UIComponents";
 
 // Views
@@ -17,7 +20,7 @@ import ProjectsView from "./views/ProjectsView";
 // Hooks & Utils
 import { useWorklogData } from "./hooks/useWorklogData";
 import { formatDate, parseTime, formatTime, getJiraUrl } from "./utils/helpers";
-import { exportToCSV, exportToXLSX } from "./utils/exportUtils";
+import { exportToCSV, exportToXLSX, exportToPDF } from "./utils/exportUtils";
 import {
     fetchWorklogs,
     fetchStats,
@@ -48,6 +51,13 @@ export default function App() {
     const [currentView, setCurrentView] = useState(VIEW_MODES.DASHBOARD);
     const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
     const [showOriginal, setShowOriginal] = useState(false);
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [toast, setToast] = useState({
+        visible: false,
+        message: "",
+        details: "",
+    });
 
     // Column visibility and widths
     const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -167,16 +177,54 @@ export default function App() {
         }
     };
 
-    const handleFileUpload = async (e) => {
-        const file = e.target.files[0];
+    const handleFileUpload = async (fileOrEvent) => {
+        // Handle both File objects (from UploadModal) and events (from input)
+        const file =
+            fileOrEvent instanceof File
+                ? fileOrEvent
+                : fileOrEvent.target.files[0];
         if (!file) return;
         try {
             await uploadFile(file);
             loadWorklogs();
             loadStats();
-            alert("Uploaded successfully!");
+            setShowUploadModal(false);
         } catch (error) {
             alert("Upload failed");
+        }
+    };
+
+    const handleExport = (type, filename) => {
+        const dataToExport =
+            isMerged && showOriginal ? mergedDataFull : filteredData;
+        switch (type) {
+            case "csv":
+                exportToCSV(dataToExport, isMerged, filename);
+                break;
+            case "xlsx":
+                exportToXLSX(dataToExport, isMerged, filename);
+                break;
+            case "pdf":
+                exportToPDF(dataToExport, isMerged, filename);
+                break;
+            default:
+                break;
+        }
+    };
+
+    const handleClearAll = async () => {
+        if (
+            window.confirm(
+                "Are you sure you want to clear all entries? This cannot be undone.",
+            )
+        ) {
+            try {
+                await clearWorklogs();
+                setWorklogs([]);
+                setShowUploadModal(true);
+            } catch (error) {
+                console.error("Error clearing worklogs:", error);
+            }
         }
     };
 
@@ -307,10 +355,11 @@ export default function App() {
                         setSearchQuery={setSearchQuery}
                         isDarkMode={isDarkMode}
                         setIsDarkMode={setIsDarkMode}
-                        handleFileUpload={handleFileUpload}
                         setCurrentEntry={setCurrentEntry}
                         setModalMode={setModalMode}
                         setIsModalOpen={setIsModalOpen}
+                        hasData={worklogs.length > 0}
+                        onClearAll={handleClearAll}
                     />
 
                     {/* Content Area */}
@@ -383,8 +432,9 @@ export default function App() {
                                 setModalMode={setModalMode}
                                 setIsModalOpen={setIsModalOpen}
                                 handleDelete={handleDelete}
-                                exportToCSV={handleExportCSV}
-                                exportToXLSX={handleExportXLSX}
+                                onOpenExportModal={() =>
+                                    setShowExportModal(true)
+                                }
                                 isDarkMode={isDarkMode}
                                 theme={THEME}
                                 calculatedStats={calculatedStats}
@@ -441,6 +491,38 @@ export default function App() {
                 isDarkMode={isDarkMode}
             />
 
+            {/* Export Modal */}
+            <ExportModal
+                isOpen={showExportModal}
+                onClose={() => setShowExportModal(false)}
+                onExport={handleExport}
+                isDarkMode={isDarkMode}
+                isMerged={isMerged}
+            />
+
+            {/* Upload Modal */}
+            <UploadModal
+                isOpen={showUploadModal || worklogs.length === 0}
+                onClose={() => setShowUploadModal(false)}
+                onUpload={handleFileUpload}
+                onError={(message, details) =>
+                    setToast({ visible: true, message, details })
+                }
+                isDarkMode={isDarkMode}
+                canClose={worklogs.length > 0}
+            />
+
+            {/* Toast Notification */}
+            <Toast
+                message={toast.message}
+                details={toast.details}
+                type="error"
+                isVisible={toast.visible}
+                onClose={() => setToast({ ...toast, visible: false })}
+                isDarkMode={isDarkMode}
+                duration={8000}
+            />
+
             {/* Animations */}
             <style>{`
                 @keyframes blob {
@@ -470,6 +552,12 @@ export default function App() {
                     to { opacity: 1; }
                 }
                 .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+                @keyframes slideInUp {
+                    from { opacity: 0; transform: translateY(20px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-slide-in-up { animation: slideInUp 0.3s ease-out forwards; }
 
                 .scrollbar-thin::-webkit-scrollbar {
                     width: 6px;

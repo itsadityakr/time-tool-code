@@ -109,37 +109,182 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
     try {
         // Check if file was uploaded
         if (!req.file) {
-            return res.status(400).json({ error: "No file uploaded" });
+            return res.status(400).json({
+                error: "No file uploaded",
+                details: "Please select a file to upload.",
+            });
         }
 
         // Read the uploaded file using xlsx library
-        const workbook = xlsx.readFile(req.file.path);
+        let workbook;
+        try {
+            workbook = xlsx.readFile(req.file.path);
+        } catch (parseError) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                error: "Cannot read file",
+                details: `The file appears to be corrupted or is not a valid Excel/CSV file.\n\nTechnical details: ${parseError.message}`,
+            });
+        }
+
         const sheetName = workbook.SheetNames[0]; // Get first sheet
+        if (!sheetName) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                error: "Empty workbook",
+                details:
+                    "The uploaded file has no sheets. Please ensure your Excel file contains at least one sheet with data.",
+            });
+        }
+
         const worksheet = workbook.Sheets[sheetName];
 
         // Convert Excel sheet to JSON (array of objects)
         const data = xlsx.utils.sheet_to_json(worksheet);
 
-        // Transform each row into our worklog format
-        const newLogs = data.map((row) => ({
-            id: Date.now() + Math.random(), // Ensure unique IDs
-            date: row.Date
-                ? excelDateToJSDate(row.Date)
-                : row.date
-                  ? new Date(row.date)
-                  : "",
+        // Check if data is empty
+        if (!data || data.length === 0) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                error: "No data found",
+                details: `The sheet "${sheetName}" is empty or has no readable data.\n\nPlease ensure your file has:\n• A header row with column names\n• At least one row of data below the headers`,
+            });
+        }
 
-            jiraId: row["JIRA ID"] || row.jiraId || "N/A",
-            description: row.Description || row.description || "",
-            timeLogged: row["Time Logged"] || row.timeLogged || "",
-            status: row["Remarks/Status"] || row.status || "",
-            projectName: row["Project Name"] || row.projectName || "",
-            remarks: row.Remarks || row.remarks || "",
-            createdAt: new Date(),
-        }));
+        // Check for required columns (at least one identifier)
+        const firstRow = data[0];
+        const columns = Object.keys(firstRow);
 
-        // Add all new logs to our worklogs array
-        worklogs = newLogs.map((l, i) => ({
+        const requiredColumns = {
+            date: ["Date", "date", "DATE"],
+            jiraId: [
+                "JIRA ID",
+                "jiraId",
+                "Jira ID",
+                "JIRA_ID",
+                "jira_id",
+                "Ticket",
+                "ticket",
+            ],
+            description: [
+                "Description",
+                "description",
+                "DESCRIPTION",
+                "Task",
+                "task",
+            ],
+            timeLogged: [
+                "Time Logged",
+                "timeLogged",
+                "Time",
+                "time",
+                "Hours",
+                "hours",
+                "Duration",
+                "duration",
+            ],
+        };
+
+        const missingColumns = [];
+        const foundColumns = {};
+
+        for (const [key, aliases] of Object.entries(requiredColumns)) {
+            const found = aliases.find((alias) => columns.includes(alias));
+            if (found) {
+                foundColumns[key] = found;
+            } else {
+                missingColumns.push(key);
+            }
+        }
+
+        // Require at least Date and either JIRA ID or Description
+        if (!foundColumns.date) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                error: "Missing required column: Date",
+                details: `Could not find a "Date" column in your file.\n\nFound columns: ${columns.join(", ")}\n\nExpected column names:\n• Date, date, or DATE\n\nPlease rename your column and try again.`,
+            });
+        }
+
+        if (!foundColumns.jiraId && !foundColumns.description) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({
+                error: "Missing required columns",
+                details: `Your file must have at least a "JIRA ID" or "Description" column.\n\nFound columns: ${columns.join(", ")}\n\nExpected column names:\n• JIRA ID, Jira ID, Ticket\n• Description, Task\n\nPlease add the required columns and try again.`,
+            });
+        }
+
+        // Validate each row and collect errors
+        const rowErrors = [];
+        const validLogs = [];
+
+        data.forEach((row, index) => {
+            const rowNum = index + 2; // +2 because of header row and 0-indexing
+            const errors = [];
+
+            // Check date
+            const dateValue = row.Date || row.date;
+            if (!dateValue) {
+                errors.push("Missing date");
+            }
+
+            // Check time logged format if present
+            const timeValue =
+                row["Time Logged"] || row.timeLogged || row.Time || row.time;
+            if (timeValue && typeof timeValue === "string") {
+                // Simple validation - should contain h or m or be a number
+                if (!/\d/.test(timeValue)) {
+                    errors.push(`Invalid time format: "${timeValue}"`);
+                }
+            }
+
+            if (errors.length > 0) {
+                rowErrors.push({ row: rowNum, errors });
+            }
+
+            // Create the log entry
+            validLogs.push({
+                id: Date.now() + Math.random(),
+                date: dateValue ? excelDateToJSDate(dateValue) : "",
+                jiraId:
+                    row["JIRA ID"] ||
+                    row.jiraId ||
+                    row["Jira ID"] ||
+                    row.Ticket ||
+                    "N/A",
+                description:
+                    row.Description || row.description || row.Task || "",
+                timeLogged:
+                    row["Time Logged"] ||
+                    row.timeLogged ||
+                    row.Time ||
+                    row.time ||
+                    "",
+                status: row["Remarks/Status"] || row.status || row.Status || "",
+                projectName:
+                    row["Project Name"] || row.projectName || row.Project || "",
+                remarks: row.Remarks || row.remarks || "",
+                createdAt: new Date(),
+            });
+        });
+
+        // If there are row errors, report them but still try to import valid data
+        if (rowErrors.length > 0 && rowErrors.length === data.length) {
+            // All rows have errors
+            fs.unlinkSync(req.file.path);
+            const errorDetails = rowErrors
+                .slice(0, 5)
+                .map((e) => `Row ${e.row}: ${e.errors.join(", ")}`)
+                .join("\n");
+
+            return res.status(400).json({
+                error: "All rows have validation errors",
+                details: `Every row in your file has issues:\n\n${errorDetails}${rowErrors.length > 5 ? `\n\n...and ${rowErrors.length - 5} more rows with errors` : ""}\n\nPlease fix these issues and try again.`,
+            });
+        }
+
+        // Add all valid logs to our worklogs array
+        worklogs = validLogs.map((l, i) => ({
             ...l,
             id: Date.now() + i,
         }));
@@ -147,13 +292,27 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
         // Delete the temporary uploaded file to save space
         fs.unlinkSync(req.file.path);
 
-        res.json({
+        // Include warnings if some rows had issues
+        const response = {
             message: "File uploaded successfully",
-            count: newLogs.length,
-        });
+            count: validLogs.length,
+        };
+
+        if (rowErrors.length > 0) {
+            response.warnings = `${rowErrors.length} row(s) had minor issues but were imported with defaults.`;
+        }
+
+        res.json(response);
     } catch (error) {
         console.error("Upload error:", error);
-        res.status(500).json({ error: "Failed to process file" });
+        // Clean up file if it exists
+        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({
+            error: "Failed to process file",
+            details: `An unexpected error occurred while processing your file.\n\nError: ${error.message}\n\nPlease ensure your file is a valid Excel (.xlsx) or CSV (.csv) file and try again.`,
+        });
     }
 });
 

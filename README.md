@@ -17,7 +17,7 @@ Upload a worklog spreadsheet and turn it into a dashboard — table, analytics, 
 - **Projects** — per-project breakdown
 - **Export** and CRUD on individual entries (add / edit / delete, plus clear-all)
 
-## API (backend, `:5000`)
+## API (backend, `:5010`)
 
 | Method | Route | Purpose |
 | --- | --- | --- |

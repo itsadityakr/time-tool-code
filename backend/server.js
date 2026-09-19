@@ -5,14 +5,19 @@ const multer = require("multer");
 const xlsx = require("xlsx");
 const path = require("path");
 const fs = require("fs");
+const { logger, requestLogger, installProcessHandlers } = require("./logger");
+
+// Log to backend/logs/<start time>.log and catch crashes
+installProcessHandlers();
 
 // Create Express app
 const app = express();
-const PORT = 5000;
+const PORT = 5010;
 
 // Middleware - these help process requests
 app.use(cors()); // Allows frontend to talk to backend
 app.use(express.json()); // Allows us to read JSON data
+app.use(requestLogger); // One log line per request
 
 // Store worklogs in memory (simple approach for beginners)
 // In a real app, you'd use a database like MongoDB or PostgreSQL
@@ -417,4 +422,7 @@ app.listen(PORT, () => {
     console.log(
         `   - GET  /api/worklogs/grouped/dates - Get worklogs grouped by date`,
     );
+}).on("error", (err) => {
+    logger.fatal(`Failed to start server on port ${PORT}`, err);
+    process.exit(1);
 });

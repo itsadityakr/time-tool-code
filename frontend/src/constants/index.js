@@ -1,5 +1,5 @@
 // API Configuration
-export const API_URL = "http://localhost:5000/api";
+export const API_URL = "http://localhost:5010/api";
 
 // Theme Configuration
 export const THEME = {
